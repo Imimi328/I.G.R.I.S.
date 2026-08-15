@@ -173,47 +173,95 @@ def search_blocks(query: str = "", state: str = "", category: str = "", limit: i
             results.append(d)
         return results
 
-def find_block_exact_or_fuzzy(block_or_district: str, state_hint: str = "") -> Optional[Dict[str, Any]]:
+def find_block_exact_or_fuzzy(user_msg_or_block: str, state_hint: str = "") -> Optional[Dict[str, Any]]:
+    import re
+    # Extract candidate alphanumeric tokens
+    tokens = re.findall(r'\b[A-Za-z0-9\-\_]{3,}\b', user_msg_or_block)
+    STOP_WORDS = {
+        'what', 'where', 'how', 'when', 'why', 'who', 'which', 'tell', 'about', 'is', 'it', 
+        'are', 'was', 'were', 'safe', 'borewell', 'tubewell', 'groundwater', 'water', 'status', 
+        'category', 'in', 'the', 'for', 'please', 'can', 'dig', 'drill', 'drilling', 'pump', 
+        'and', 'or', 'of', 'at', 'to', 'with', 'from', 'by', 'on', 'issues', 'issue', 'quality', 
+        'table', 'depth', 'feasibility', 'permit', 'permission', 'clearance', 'official', 'my', 
+        'area', 'location', 'village', 'block', 'district', 'state', 'city', 'house', 'home', 
+        'doing', 'do', 'extract', 'extraction', 'recharge', 'bcm', 'here', 'there', 'view', 
+        'check', 'show', 'give', 'me', 'find', 'get', 'data', 'report', 'like', 'think', 'idea'
+    }
+    candidates = [t for t in tokens if t.lower() not in STOP_WORDS]
+    if not candidates:
+        candidates = [user_msg_or_block.strip()]
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        search_term = block_or_district.strip().lower()
-        
         select_sql = "SELECT id, state as state_name, district as district_name, block_name, categorization as category FROM blocks_categorization"
         
-        res = None
+        # 1. Exact block match within state_hint
         if state_hint:
-            cursor.execute(f"""
-                {select_sql}
-                WHERE LOWER(block_name) = ? AND LOWER(state) LIKE ?
-                LIMIT 1
-            """, (search_term, f"%{state_hint.lower()}%"))
-            res = cursor.fetchone()
-                
-        if not res:
-            # Exact block match
-            cursor.execute(f"{select_sql} WHERE LOWER(block_name) = ? LIMIT 1", (search_term,))
-            res = cursor.fetchone()
-            
-        if not res:
-            # Exact district match
-            cursor.execute(f"{select_sql} WHERE LOWER(district) = ? LIMIT 1", (search_term,))
-            res = cursor.fetchone()
-            
-        if not res:
-            # Fuzzy match
-            cursor.execute(f"""
-                {select_sql}
-                WHERE LOWER(block_name) LIKE ? OR LOWER(district) LIKE ?
-                ORDER BY CASE WHEN LOWER(categorization) = 'over_exploited' THEN 1 ELSE 2 END
-                LIMIT 1
-            """, (f"%{search_term}%", f"%{search_term}%"))
-            res = cursor.fetchone()
-            
-        if res:
-            d = dict(res)
-            d["category"] = format_category(d["category"])
-            return d
+            for cand in candidates:
+                cursor.execute(f"{select_sql} WHERE LOWER(block_name) = ? AND LOWER(state) LIKE ? LIMIT 1", (cand.lower(), f"%{state_hint.lower()}%"))
+                r = cursor.fetchone()
+                if r:
+                    d = dict(r)
+                    d["category"] = format_category(d["category"])
+                    return d
+                    
+        # 2. Exact block match anywhere across India
+        for cand in candidates:
+            cursor.execute(f"{select_sql} WHERE LOWER(block_name) = ? LIMIT 1", (cand.lower(),))
+            r = cursor.fetchone()
+            if r:
+                d = dict(r)
+                d["category"] = format_category(d["category"])
+                return d
+
+        # 3. Exact district match within state_hint
+        if state_hint:
+            for cand in candidates:
+                cursor.execute(f"{select_sql} WHERE LOWER(district) = ? AND LOWER(state) LIKE ? LIMIT 1", (cand.lower(), f"%{state_hint.lower()}%"))
+                r = cursor.fetchone()
+                if r:
+                    d = dict(r)
+                    d["category"] = format_category(d["category"])
+                    return d
+                    
+        # 4. Exact district match anywhere
+        for cand in candidates:
+            cursor.execute(f"{select_sql} WHERE LOWER(district) = ? LIMIT 1", (cand.lower(),))
+            r = cursor.fetchone()
+            if r:
+                d = dict(r)
+                d["category"] = format_category(d["category"])
+                return d
+
+        # 5. Fuzzy match STRICTLY within state_hint if given
+        if state_hint:
+            for cand in candidates:
+                cursor.execute(f"""
+                    {select_sql}
+                    WHERE (LOWER(block_name) LIKE ? OR LOWER(district) LIKE ?) AND LOWER(state) LIKE ?
+                    LIMIT 1
+                """, (f"%{cand.lower()}%", f"%{cand.lower()}%", f"%{state_hint.lower()}%"))
+                r = cursor.fetchone()
+                if r:
+                    d = dict(r)
+                    d["category"] = format_category(d["category"])
+                    return d
+        else:
+            # Only if NO state_hint was given, do a broad fuzzy match
+            for cand in candidates:
+                cursor.execute(f"""
+                    {select_sql}
+                    WHERE LOWER(block_name) LIKE ? OR LOWER(district) LIKE ?
+                    LIMIT 1
+                """, (f"%{cand.lower()}%", f"%{cand.lower()}%"))
+                r = cursor.fetchone()
+                if r:
+                    d = dict(r)
+                    d["category"] = format_category(d["category"])
+                    return d
+
         return None
+
 
 def get_water_balancing_recommendations() -> List[Dict[str, Any]]:
     with get_db_connection() as conn:

@@ -144,32 +144,26 @@ def process_chat(req: ChatRequest):
                 "depth_trends": state_data.get("depth_trends")
             }
 
-    # 2. Block Level Search if state not directly found or specific block queried
-    if not detected_state or "block" in user_msg.lower() or "village" in user_msg.lower() or "tubewell" in user_msg.lower() or "borewell" in user_msg.lower():
-        words = re.findall(r'\b[A-Za-z]{3,}\b', user_msg)
-        # Skip stop words
-        stop_words = {"what", "where", "how", "tell", "about", "is", "it", "safe", "borewell", "tubewell", "groundwater", "water", "status", "category", "in", "the", "for", "please", "can", "dig", "drill", "pump"}
-        candidate_words = [w for w in words if w.lower() not in stop_words and w.lower() not in [s.lower() for s in ALL_STATES]]
-        
-        found_block = None
-        for candidate in candidate_words:
-            found_block = db_service.find_block_exact_or_fuzzy(candidate, state_hint=detected_state or "")
-            if found_block:
-                break
-                
-        if found_block:
-            context_payload["block_data"] = found_block
-            visualization_payload = {
-                "type": "block_card",
-                "title": f"{found_block['block_name']} ({found_block['district_name']}, {found_block['state_name']})",
-                "category": found_block["category"],
-                "block_name": found_block["block_name"],
-                "district_name": found_block["district_name"],
-                "state_name": found_block["state_name"],
-                "status_color": "#10b981" if found_block["category"] == "Safe" else \
-                                "#f59e0b" if found_block["category"] == "Semi-Critical" else \
-                                "#f97316" if found_block["category"] == "Critical" else "#ef4444"
-            }
+    # 2. Block Level Search
+    found_block = db_service.find_block_exact_or_fuzzy(user_msg, state_hint=detected_state or "")
+    if found_block:
+        context_payload["block_data"] = found_block
+        if not detected_state and found_block.get("state_name"):
+            state_data = db_service.get_state_detail(found_block["state_name"])
+            if state_data:
+                context_payload["state_data"] = state_data
+
+        visualization_payload = {
+            "type": "block_card",
+            "title": f"{found_block['block_name']} ({found_block['district_name']}, {found_block['state_name']})",
+            "category": found_block["category"],
+            "block_name": found_block["block_name"],
+            "district_name": found_block["district_name"],
+            "state_name": found_block["state_name"],
+            "status_color": "#10b981" if found_block["category"] == "Safe" else \
+                            "#f59e0b" if found_block["category"] == "Semi-Critical" else \
+                            "#f97316" if found_block["category"] == "Critical" else "#ef4444"
+        }
 
     # 3. National Summary Intent
     if any(k in user_msg.lower() for k in ["national", "all india", "overall", "india summary", "total recharge"]):
