@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import db_service
@@ -283,6 +284,11 @@ def get_dam_and_aquifer_grid():
     Returns conjunctive surface-to-groundwater balancing recommendations (Dam Surplus -> Dry Aquifer MAR).
     """
     return db_service.get_water_balancing_recommendations()
+
+# Mount vanilla HTML/CSS/JS frontend directly at root
+frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
+if os.path.exists(frontend_dir):
+    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 
 if __name__ == "__main__":
     import uvicorn
