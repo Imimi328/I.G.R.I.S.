@@ -256,10 +256,20 @@ CURRENT_LOCATION_PHRASES = (
     "my city", "my farm", "under my feet"
 )
 
+LOCATION_DEPENDENT_TERMS = (
+    "irrigat", "farm", "crop", "borewell", "bore well", "drill", "pump",
+    "water quality", "safe to drink", "recharge", "rainwater", "my water"
+)
+
 
 def refers_to_current_location(text: str) -> bool:
     normalized = re.sub(r"\s+", " ", text.lower()).strip()
     return any(phrase in normalized for phrase in CURRENT_LOCATION_PHRASES)
+
+
+def requires_location_context(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.lower()).strip()
+    return any(term in normalized for term in LOCATION_DEPENDENT_TERMS)
 
 
 def extract_explicit_location_query(text: str) -> Optional[str]:
@@ -538,6 +548,18 @@ def process_chat(
         raise HTTPException(status_code=400, detail="Enter a groundwater question.")
     if not auth_service.get_llm_enabled():
         raise HTTPException(status_code=503, detail="AI generation is currently paused by the administrator.")
+    detected_state = extract_state_from_text(user_msg)
+    explicit_location_query = extract_explicit_location_query(user_msg)
+    current_context = req.current_location if isinstance(req.current_location, dict) else None
+    if (
+        requires_location_context(user_msg)
+        and not explicit_location_query
+        and not (current_context or {}).get("location")
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Your location context is not ready. Wait for the area indicator or name a place in your question.",
+        )
     try:
         conversation = auth_service.ensure_conversation(user["sub"], req.conversation_id, user_msg)
     except PermissionError as error:
@@ -547,14 +569,12 @@ def process_chat(
         {"role": message["role"], "content": message["content"]}
         for message in (saved_conversation or {}).get("messages", [])[-12:]
     ]
-    detected_state = extract_state_from_text(user_msg)
-    explicit_location_query = extract_explicit_location_query(user_msg)
     named_unit = db_service.find_named_location_in_text(user_msg, state_hint=detected_state or "") if explicit_location_query else None
-    current_context = req.current_location if isinstance(req.current_location, dict) else None
     
     context_payload = {}
     visualization_payload = None
     state_data = None
+    current_location = {}
     
     # 0. Resolve an explicitly named place. Otherwise use the browser location
     # supplied by the user as the conversation's default geographic context.
@@ -612,7 +632,7 @@ def process_chat(
 
     # 1. State Level Intent
     if detected_state:
-        state_data = db_service.get_state_detail(detected_state)
+        state_data = db_service.get_state_detail(detected_state) or current_location.get("state_data")
         if state_data:
             context_payload["state_data"] = state_data
             
@@ -718,7 +738,11 @@ def process_chat(
         visualization_payload["visual_catalog"] = visualization_service.catalog_summary()
 
     # 4. RAG qualitative snippet search
-    rag_snippets = rag_service.search_corpus(user_msg, top_k=2)
+    rag_snippets = rag_service.search_corpus(
+        user_msg,
+        top_k=1,
+        state_name=state_data.get("state_name") if state_data else None,
+    ) if state_data else []
     if rag_snippets:
         context_payload["knowledge_snippets"] = rag_snippets
 

@@ -17,21 +17,24 @@ def load_corpus() -> List[Dict[str, Any]]:
             print(f"Error loading RAG corpus: {e}")
     return _CORPUS_CACHE
 
-def search_corpus(query: str, top_k: int = 2) -> List[Dict[str, Any]]:
+def search_corpus(query: str, top_k: int = 2, state_name: Optional[str] = None) -> List[Dict[str, Any]]:
     corpus = load_corpus()
     if not corpus:
         return []
         
     query_tokens = set(re.findall(r'\w+', query.lower()))
     scored_results = []
+    requested_state = re.sub(r"\s+", " ", (state_name or "").strip().lower())
     
     for doc in corpus:
         state = doc.get("state_name", "").lower()
+        if requested_state and re.sub(r"\s+", " ", state.strip()) != requested_state:
+            continue
         full_text = doc.get("full_text", "")
         summary = doc.get("summary", "")
         
         # State name bonus match
-        state_match_score = 10 if any(q in state for q in query_tokens if len(q) > 2) else 0
+        state_match_score = 10 if requested_state or any(q in state for q in query_tokens if len(q) > 2) else 0
         
         # Word frequency in text
         text_tokens = re.findall(r'\w+', full_text.lower())

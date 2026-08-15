@@ -5,16 +5,21 @@
 > **Organization:** Ministry of Jal Shakti / Central Ground Water Board (CGWB)  
 > **Category:** Software | **Theme:** Smart Automation
 
+[![Live application](https://img.shields.io/badge/Live-igris.site-087f78?style=for-the-badge)](https://igris.site)
+[![API status](https://img.shields.io/badge/API-api.igris.site-0d4748?style=for-the-badge)](https://api.igris.site/api/health)
+
 ---
 
 ## 📌 Project Overview
-**I.G.R.I.S.** is an intelligent, multilingual virtual assistant designed to serve as the conversational front-door to the **IN-GRES** (India-Groundwater Resource Estimation System) platform. 
+**I.G.R.I.S.** is a multilingual, location-aware groundwater assistant designed as a simpler front door to **INGRES** (India-Groundwater Resource Estimation System).
 
-It transforms dense national groundwater reports, 36 state fact sheets, and **6,635 granular block-level records** into an instant, location-aware decision assistant for farmers, residents, industries, and policymakers.
+It transforms dense national assessments, 36 state fact sheets, and **6,635 block-level records** into understandable evidence for farmers, residents, businesses, and public officials.
 
 ![I.G.R.I.S. citizen experience](docs/preview.png)
 
-The assistant understands phrases such as **“my area”** as the user's selected or GPS location, while an explicitly named place overrides that context. It combines official INGRES/CGWB evidence with live weather and transparent location resolution rather than pretending that one block represents every locality.
+The assistant understands phrases such as **“my area”** as the user's selected or permission-based location, while an explicitly named place overrides that context. It combines official CGWB evidence, transparent assessment-unit matching, and live weather without presenting regional data as a measurement of an individual well.
+
+> **Live:** [igris.site](https://igris.site) · Static pages are public; live tools and model generation require Google sign-in.
 
 ---
 
@@ -31,12 +36,22 @@ INGRES Government Data & Reports
    │
    ├──> AI RAG Knowledge Corpus (data/processed/state_factsheets_corpus.json)
    │
-   └──> I.G.R.I.S. Conversational Engine
+   └──> I.G.R.I.S. Decision Engine
           ├── Context-aware location resolver (GPS, locality, city, district, state)
-          ├── DeepSeek V4 Flash with a fail-closed admin kill switch
+          ├── DeepSeek chat with a fail-closed, server-side admin kill switch
           ├── 128 visualization recipes across 12 evidence families
-          ├── Live Open-Meteo weather and irrigation context
+          ├── Cached Open-Meteo weather plus deterministic irrigation rules
           └── Original CGWB fact-sheet evidence viewer
+```
+
+```text
+Browser (igris.site / www.igris.site)
+        │  HTTP-only Google session
+        ▼
+Cloudflare Worker + Static Assets
+        │  encrypted gateway credential
+        ▼
+Nginx → FastAPI (127.0.0.1:8010) → SQLite / CGWB data / DeepSeek
 ```
 
 ---
@@ -57,8 +72,11 @@ INGRES Government Data & Reports
 │   │   └── CGWB_Dynamic_GW_Resources_India_2025.pdf # National Ground Water Assessment Report
 │   ├── build_master_database.py              # Master data ingestion pipeline
 │   └── generate_pdf_guide.py                 # PDF documentation generator
-├── frontend/                                  # Six-page responsive citizen experience
+├── frontend/                                  # Responsive citizen experience
+├── frontend-worker/                           # Cloudflare Worker + static asset deployment
+├── edge-gateway/                              # Private same-origin API gateway Worker
 ├── server/                                    # FastAPI context, chat, data, and visual APIs
+├── deploy/                                    # Isolated Nginx and systemd production units
 ├── docs/                                      # Product screenshots
 ├── SIH2026_INGRES_AI_Assistant_Complete_Guide.pdf # Complete Project Guide for NotebookLM
 └── README.md
@@ -74,8 +92,9 @@ INGRES Government Data & Reports
 5. **Citizen workflows**: Dedicated pages for local status, farming decisions, water safety, and rooftop recharge planning.
 6. **Multilingual interaction**: English plus all 22 Scheduled Languages of India, language-matched browser speech recognition where supported, printable decision briefs, responsive navigation, and keyboard-friendly controls.
 7. **Live local context**: Open-Meteo conditions and forecast data turn official annual assessments into practical “what should I do today?” guidance.
-8. **Graceful offline intelligence**: When the local language model is unavailable, grounded rules still produce useful answers without inventing official facts.
-9. **Private citizen accounts**: Google verifies identity, model generation requires sign-in, and account-owned conversations retain their evidence canvas for later review.
+8. **Zero-token decision tools**: Farm planning, local status, water safety, and recharge estimates use deterministic calculations and indexed evidence—not DeepSeek tokens.
+9. **Fail-closed model control**: When the administrator disables DeepSeek, chat returns `503` before conversation creation, evidence gathering, fallback generation, or any paid request.
+10. **Private citizen accounts**: Google verifies identity, every functional API requires a valid session, and account-owned conversations retain their evidence canvas for later review.
 
 ![I.G.R.I.S. conversational evidence canvas](docs/chat-preview.png)
 
@@ -89,7 +108,7 @@ pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Open [http://localhost:8000](http://localhost:8000). Location search and weather require internet access and a signed-in account. When the administrator disables DeepSeek, chat returns a paused status without generating an AI or deterministic fallback answer.
+Open [http://localhost:8000](http://localhost:8000). Location search and weather require internet access and a signed-in account. Browser speech recognition depends on browser support; Chrome and Edge provide the most reliable experience.
 
 ### Google sign-in
 
@@ -104,11 +123,11 @@ Open [http://localhost:8000](http://localhost:8000). Location search and weather
 
 The Google Identity button used here validates an ID token, so the OAuth client secret is never sent to or used by the browser. The screenshot error `no registered origin` is fixed in Google Cloud Console by adding the current origin to the list above; changing application code or the client secret cannot register that origin.
 
-Every functional API is protected by an HTTP-only, SameSite session cookie. Static explanatory pages remain viewable, but location searches, weather, official groundwater evidence, source sheets, calculators, voice transcription, and chat require a verified account. Private conversations are stored in the ignored runtime database at `data/runtime/igris_accounts.db`.
+Every functional API is protected by an HTTP-only, SameSite session cookie. Static explanatory pages remain viewable, but location search, weather, groundwater evidence, source sheets, calculators, and chat require a verified account. Speech recognition is performed by the browser and does not run a transcription model on the VPS. Private conversations are stored in the ignored runtime database at `data/runtime/igris_accounts.db`.
 
 ### Production topology
 
-Cloudflare Pages serves the static `frontend/` directory on `igris.site` and `www.igris.site`. A dedicated Cloudflare Worker handles `igris.site/api/*`, adds a private gateway credential, and forwards requests to the VPS. FastAPI rejects direct requests that do not carry that credential. Uvicorn remains bound to loopback at `127.0.0.1:8010` behind Nginx. Configure the VPS with:
+The `igris` Cloudflare Worker serves `frontend/` as static assets on `igris.site` and `www.igris.site`, applying the production Content Security Policy and browser permission policy to every asset response. A separate gateway Worker handles same-origin `/api/*` requests, adds an encrypted gateway credential, and forwards them to `api.igris.site`. FastAPI rejects requests that bypass the gateway. Uvicorn remains isolated on `127.0.0.1:8010` behind Nginx. Configure the VPS with:
 
 ```env
 APP_ENV=production
@@ -127,21 +146,36 @@ LLM_DAILY_USER_LIMIT=20
 LLM_GLOBAL_DAILY_LIMIT=300
 ```
 
-The LLM starts disabled in the private runtime database. Only a Google-verified account listed in `ADMIN_EMAILS` can read or mutate `/api/admin/*`; all enforcement occurs server-side. Every signed-in citizen can chat, but disabled or exhausted paid generation falls back to the local grounded engine. Daily reservations are atomic across workers, and only a one-way hash of the Google subject is sent as DeepSeek's `user_id`.
+The LLM starts disabled in the private runtime database. Only a Google-verified account listed in `ADMIN_EMAILS` can read or mutate `/api/admin/*`; all enforcement occurs server-side. When generation is disabled, the chat endpoint fails closed and does not return a synthetic fallback answer. Daily reservations are atomic across workers, and only a one-way hash of the Google subject is sent as DeepSeek's `user_id`.
+
+### Cost boundaries
+
+| Feature | Data source | DeepSeek tokens |
+|---|---|---:|
+| Ask I.G.R.I.S. chat | CGWB evidence + DeepSeek | Yes, only when enabled |
+| My Area | Indexed CGWB data + cached weather | 0 |
+| Farm Plan | Cached weather + deterministic agronomy rules | 0 |
+| Water Safety | Indexed state water-quality evidence | 0 |
+| Recharge Planner | Local engineering calculation | 0 |
+
+The admin switch controls **paid DeepSeek chat generation only**. Disabling it immediately prevents paid model calls while leaving authenticated, rule-based tools available.
 
 Keep `GOOGLE_CLIENT_ID`, `AUTH_SESSION_SECRET`, `DeepSeek_Key`, `GATEWAY_SHARED_SECRET`, the account database, and any immutable admin subject IDs on the VPS—not in frontend files or GitHub. Store the matching gateway value as the Worker's encrypted `IGRIS_GATEWAY_KEY` secret. Put the VPS environment at `/etc/igris/igris.env` with owner-only permissions. The reference systemd and Nginx units are in `deploy/` and intentionally use a dedicated unprivileged `igris` account without changing other applications on the server. Follow the staged activation procedure in `edge-gateway/README.md` to avoid downtime.
 
 ### Model upgrades
 
-`deepseek-v4-flash` runs with thinking disabled and an 800-token ceiling to control cost. The owner can later move complex workflows to `deepseek-v4-pro` by changing the server-only model setting; location resolution, structured evidence retrieval, account security, conversation history, and visual generation remain model-independent.
+The configured DeepSeek model runs with an 800-token ceiling to control cost. The owner can later change `LLM_MODEL` server-side; location resolution, structured evidence retrieval, account security, conversation history, and deterministic visual rendering remain model-independent.
 
 ### Core APIs
 
+- `GET /api/health` — public service health without protected groundwater data.
 - `GET /api/local-context/search?query=...` — resolve a named place and return groundwater plus weather context.
 - `GET /api/location/suggest?query=...` — locality autocomplete and transliteration-aware suggestions.
 - `POST /api/chat` — context-aware groundwater answers and visualization payloads.
 - `GET /api/visualizations/catalog` — the complete visualization recipe catalog.
 - `GET /api/factsheets/{state}/pages/{page}.png` — rendered official source-sheet evidence.
+
+Except for health and authentication bootstrap routes, API endpoints require both the private Worker gateway credential and a valid citizen session.
 
 ---
 
@@ -155,7 +189,11 @@ The decision brief is an evidence-based screening tool, never a substitute for s
 
 ---
 
-## 👥 Team Emogi (JSPM University, Pune)
+## 👥 Developed by [Emogi](https://emogi.in)
+
+I.G.R.I.S. is designed and developed by **Emogi**, a team focused on making complex intelligent systems clear, useful, and accessible.
+
+**Team Emogi · JSPM University, Pune**
 
 **Department:** School of Computational Sciences | **Program:** B.Tech AI/ML (SY)
 

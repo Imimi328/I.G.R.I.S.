@@ -1,6 +1,7 @@
 const appState = {
   activeContext: null,
   chatLocation: null,
+  chatLocationPromise: null,
   chatHistory: [],
   conversationId: null,
   user: null,
@@ -624,11 +625,16 @@ function initChat() {
     setChatAuthState();
     if (!appState.user) { locationResolved = false; return; }
     loadChatHistory();
-    if (!locationResolved) { locationResolved = true; resolveChatLocation(); }
+    if (!locationResolved) {
+      locationResolved = true;
+      appState.chatLocationPromise = resolveChatLocation();
+    }
   };
   appState.authReady.then(initializeSignedInChat);
   document.addEventListener('igris:auth-changed', initializeSignedInChat);
-  refreshLocation.addEventListener('click', async () => { if (await requireSignedInAction()) resolveChatLocation(); });
+  refreshLocation.addEventListener('click', async () => {
+    if (await requireSignedInAction()) appState.chatLocationPromise = resolveChatLocation();
+  });
   $('#print-evidence').addEventListener('click', () => window.print());
   $('#chat-auth-open').addEventListener('click', openAuthDialog);
   $('#chat-history-open').addEventListener('click', openChatHistory);
@@ -638,6 +644,7 @@ function initChat() {
     if (!appState.user) { openAuthDialog(); return; }
     const message = String(question || input.value).trim();
     if (!message) return;
+    if (appState.chatLocationPromise) await appState.chatLocationPromise;
     appendChatMessage(messages, 'user', message);
     input.value = '';
     submit.disabled = true;
