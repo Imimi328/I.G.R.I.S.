@@ -127,16 +127,16 @@ def process_chat(req: ChatRequest):
                 "title": f"Groundwater Profile: {state_data['state_name']}",
                 "metrics": {
                     "stage_of_extraction": state_data.get("stage_of_extraction_pct", 0),
-                    "total_recharge_bcm": state_data.get("total_recharge_bcm", 0),
-                    "total_extraction_bcm": state_data.get("total_extraction_bcm", 0),
-                    "future_available_bcm": state_data.get("net_future_availability_bcm", 0)
+                    "total_recharge_bcm": state_data.get("total_annual_recharge", state_data.get("total_recharge_bcm", 0)),
+                    "total_extraction_bcm": state_data.get("total_annual_extraction", state_data.get("total_extraction_bcm", 0)),
+                    "future_available_bcm": state_data.get("net_availability_future", state_data.get("net_availability_future_bcm", 0))
                 },
                 "donut_chart": {
                     "labels": ["Irrigation", "Industrial", "Domestic"],
                     "data": [
-                        state_data.get("irrigation_extraction_bcm", 0),
-                        state_data.get("industrial_extraction_bcm", 0),
-                        state_data.get("domestic_extraction_bcm", 0)
+                        state_data.get("irrigation_extraction", state_data.get("irrigation_extraction_bcm", 0)),
+                        state_data.get("industrial_extraction", state_data.get("industrial_extraction_bcm", 0)),
+                        state_data.get("domestic_extraction", state_data.get("domestic_extraction_bcm", 0))
                     ]
                 },
                 "category_breakdown": state_data.get("category_counts", {}),

@@ -100,6 +100,16 @@ def get_state_detail(state_name: str) -> Optional[Dict[str, Any]]:
         state_data = dict(state_row)
         clean_state_name = state_data["state_name"]
         
+        # Add alias fields for consistent downstream consumption
+        state_data["total_recharge_bcm"] = state_data.get("total_annual_recharge", 0)
+        state_data["total_extraction_bcm"] = state_data.get("total_annual_extraction", 0)
+        state_data["irrigation_extraction_bcm"] = state_data.get("irrigation_extraction", 0)
+        state_data["industrial_extraction_bcm"] = state_data.get("industrial_extraction", 0)
+        state_data["domestic_extraction_bcm"] = state_data.get("domestic_extraction", 0)
+        state_data["net_availability_future_bcm"] = state_data.get("net_availability_future", 0)
+        state_data["future_available_bcm"] = state_data.get("net_availability_future", 0)
+        state_data["annual_extractable_bcm"] = state_data.get("annual_extractable_resource", 0)
+        
         # Block categorization counts for this state
         cursor.execute("""
             SELECT categorization as category, COUNT(*) as count 
