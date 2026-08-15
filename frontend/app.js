@@ -116,9 +116,9 @@ function buildAuthUI() {
       <p class="eyebrow">SERVER CONTROL PLANE</p>
       <h2>LLM spend control</h2>
       <p class="admin-summary" id="admin-summary">Loading protected server status…</p>
-      <label class="admin-switch"><input id="admin-llm-enabled" type="checkbox"><span>Allow paid DeepSeek generation</span></label>
+      <label class="admin-switch"><input id="admin-llm-enabled" type="checkbox"><span>Allow paid DeepSeek chat generation</span></label>
       <div class="admin-metrics" id="admin-metrics"></div>
-      <p class="auth-note">Turning this off is immediate and server-enforced. No AI or fallback answer is generated while disabled.</p>
+      <p class="auth-note">Turning this off is immediate and server-enforced. Chat consumes no model tokens while disabled. Farm, weather, safety, and recharge tools remain available because they use deterministic calculations and indexed evidence—not DeepSeek.</p>
     </dialog>`);
   $('#auth-close').addEventListener('click', () => $('#auth-dialog').close());
   $('#auth-dialog').addEventListener('click', (event) => { if (event.target === $('#auth-dialog')) $('#auth-dialog').close(); });
@@ -292,7 +292,7 @@ async function updateAdminLlmStatus(event) {
 function renderAdminStatus(status) {
   $('#admin-llm-enabled').checked = Boolean(status.enabled);
   $('#admin-summary').textContent = status.configured
-    ? `${status.model} is ${status.enabled ? 'enabled' : 'disabled'} for signed-in citizens.`
+    ? `${status.model} chat generation is ${status.enabled ? 'enabled' : 'disabled'} for signed-in citizens. Rule-based tools use zero model tokens.`
     : 'DeepSeek is not configured on the server.';
   $('#admin-metrics').innerHTML = `<div><span>Calls today</span><strong>${formatNumber(status.calls)} / ${formatNumber(status.daily_global_limit)}</strong></div><div><span>Successful</span><strong>${formatNumber(status.succeeded)}</strong></div><div><span>Input tokens</span><strong>${formatNumber(status.prompt_tokens)}</strong></div><div><span>Output tokens</span><strong>${formatNumber(status.completion_tokens)}</strong></div>`;
 }
