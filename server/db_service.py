@@ -254,3 +254,31 @@ def get_water_balancing_recommendations() -> List[Dict[str, Any]]:
                 "estimated_recharge_potential_mcm": target_storage_potential_mcm
             })
         return results
+
+def get_all_water_quality(state: str = "", parameter: str = "") -> List[Dict[str, Any]]:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        sql = "SELECT state_name, parameter, num_samples, permissible_limit, samples_above_limit, pct_above_limit FROM state_water_quality WHERE 1=1"
+        params = []
+        if state:
+            sql += " AND LOWER(state_name) LIKE ?"
+            params.append(f"%{state.lower()}%")
+        if parameter:
+            sql += " AND LOWER(parameter) LIKE ?"
+            params.append(f"%{parameter.lower()}%")
+        sql += " ORDER BY pct_above_limit DESC, state_name"
+        cursor.execute(sql, params)
+        return [dict(r) for r in cursor.fetchall()]
+
+def get_all_depth_trends(state: str = "") -> List[Dict[str, Any]]:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        sql = "SELECT state_name, season, depth_summary FROM state_depth_trends WHERE 1=1"
+        params = []
+        if state:
+            sql += " AND LOWER(state_name) LIKE ?"
+            params.append(f"%{state.lower()}%")
+        sql += " ORDER BY state_name, season"
+        cursor.execute(sql, params)
+        return [dict(r) for r in cursor.fetchall()]
+

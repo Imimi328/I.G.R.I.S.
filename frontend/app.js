@@ -1,31 +1,33 @@
 // ==========================================================================
-// I.G.R.I.S. PURE VANILLA JAVASCRIPT APPLICATION CONTROLLER
+// I.G.R.I.S. ENTERPRISE APPLICATION CONTROLLER
 // ==========================================================================
 
 let currentLanguage = 'en';
 let mapInstance = null;
 let mapMarkers = [];
 let allStatesData = [];
+let allQualityData = [];
+let allDepthData = [];
 let chartInstances = {};
 
-// Key hotspot locations across India
+// Key hotspot locations across India with exact coordinates
 const HOTSPOTS = [
-  { name: 'Sangrur', district: 'Sangrur', state: 'Punjab', lat: 30.2458, lng: 75.8421, category: 'Over-Exploited', soe: 168.5, quality: 'Fluoride, Uranium' },
-  { name: 'Jaipur', district: 'Jaipur', state: 'Rajasthan', lat: 26.9124, lng: 75.7873, category: 'Over-Exploited', soe: 154.2, quality: 'Nitrate, Salinity' },
-  { name: 'Jodhpur', district: 'Jodhpur', state: 'Rajasthan', lat: 26.2389, lng: 73.0243, category: 'Over-Exploited', soe: 142.1, quality: 'Fluoride, Salinity' },
-  { name: 'Kurukshetra', district: 'Kurukshetra', state: 'Haryana', lat: 29.9695, lng: 76.8783, category: 'Over-Exploited', soe: 139.8, quality: 'Iron, Nitrate' },
-  { name: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', lat: 13.0827, lng: 80.2707, category: 'Critical', soe: 98.4, quality: 'Salinity (Sea Intrusion)' },
-  { name: 'Bengaluru Urban', district: 'Bengaluru', state: 'Karnataka', lat: 12.9716, lng: 77.5946, category: 'Over-Exploited', soe: 141.2, quality: 'Nitrate, Heavy Metals' },
-  { name: 'Ahmedabad', district: 'Ahmedabad', state: 'Gujarat', lat: 23.0225, lng: 72.5714, category: 'Semi-Critical', soe: 86.4, quality: 'Salinity, Fluoride' },
-  { name: 'Pune (Haveli)', district: 'Pune', state: 'Maharashtra', lat: 18.5204, lng: 73.8567, category: 'Safe', soe: 54.8, quality: 'Normal' },
-  { name: 'Nagpur', district: 'Nagpur', state: 'Maharashtra', lat: 21.1458, lng: 79.0882, category: 'Safe', soe: 62.1, quality: 'Normal' },
-  { name: 'Patna', district: 'Patna', state: 'Bihar', lat: 25.5941, lng: 85.1376, category: 'Safe', soe: 48.6, quality: 'Arsenic' },
-  { name: 'Varanasi', district: 'Varanasi', state: 'Uttar Pradesh', lat: 25.3176, lng: 82.9739, category: 'Semi-Critical', soe: 76.2, quality: 'Normal' },
-  { name: 'Kolkata', district: 'Kolkata', state: 'West Bengal', lat: 22.5726, lng: 88.3639, category: 'Safe', soe: 58.2, quality: 'Arsenic' },
-  { name: 'Hyderabad', district: 'Hyderabad', state: 'Telangana', lat: 17.3850, lng: 78.4867, category: 'Semi-Critical', soe: 78.9, quality: 'Fluoride' },
-  { name: 'Bhopal', district: 'Bhopal', state: 'Madhya Pradesh', lat: 23.2599, lng: 77.4126, category: 'Safe', soe: 61.4, quality: 'Normal' },
-  { name: 'Guwahati', district: 'Kamrup', state: 'Assam', lat: 26.1445, lng: 91.7362, category: 'Safe', soe: 24.1, quality: 'Iron' },
-  { name: 'Thiruvananthapuram', district: 'Thiruvananthapuram', state: 'Kerala', lat: 8.5241, lng: 76.9366, category: 'Safe', soe: 51.3, quality: 'Normal' }
+  { name: 'Sangrur', district: 'Sangrur', state: 'Punjab', lat: 30.2458, lng: 75.8421, category: 'Over-Exploited', soe: 168.5, quality: 'Fluoride, Uranium', advice: 'Annual extraction is 168% of recharge! Avoid paddy crops. Mandatory 100% artificial recharge for industrial clearances.' },
+  { name: 'Jaipur (Amber)', district: 'Jaipur', state: 'Rajasthan', lat: 26.9124, lng: 75.7873, category: 'Over-Exploited', soe: 154.2, quality: 'Nitrate, Salinity', advice: 'Severe groundwater stress. CGWA NOC required; compulsory rooftop rainwater harvesting and percolation shafts.' },
+  { name: 'Jodhpur (Mandore)', district: 'Jodhpur', state: 'Rajasthan', lat: 26.2389, lng: 73.0243, category: 'Over-Exploited', soe: 142.1, quality: 'Fluoride, Salinity', advice: 'Arid climate aquifer. Rely on IGNP canal conjunctive usage and decentralized farm ponds.' },
+  { name: 'Kurukshetra (Thanesar)', district: 'Kurukshetra', state: 'Haryana', lat: 29.9695, lng: 76.8783, category: 'Over-Exploited', soe: 139.8, quality: 'Iron, Nitrate', advice: 'Tubewell density high. Adopt DSR (Direct Seeded Rice) and micro-sprinkler systems.' },
+  { name: 'Chennai Central', district: 'Chennai', state: 'Tamil Nadu', lat: 13.0827, lng: 80.2707, category: 'Critical', soe: 98.4, quality: 'Salinity (Sea Intrusion)', advice: 'Coastal aquifer over-drafting risks saline ingress. Strict mandate for storm water recharge sumps.' },
+  { name: 'Bengaluru Urban', district: 'Bengaluru', state: 'Karnataka', lat: 12.9716, lng: 77.5946, category: 'Over-Exploited', soe: 141.2, quality: 'Nitrate, Heavy Metals', advice: 'Hard rock granite aquifer. Desilt lake cascade systems to recharge shallow weathered zones.' },
+  { name: 'Ahmedabad (Daskroi)', district: 'Ahmedabad', state: 'Gujarat', lat: 23.0225, lng: 72.5714, category: 'Semi-Critical', soe: 86.4, quality: 'Salinity, Fluoride', advice: 'Alluvial deep aquifer. SAUNI Yojana pipeline recharge check dams deployed.' },
+  { name: 'Pune (Haveli)', district: 'Pune', state: 'Maharashtra', lat: 18.5204, lng: 73.8567, category: 'Safe', soe: 54.8, quality: 'Normal', advice: 'Deccan basalt basaltic aquifers. Permissible for domestic tubewells.' },
+  { name: 'Nagpur (Rural)', district: 'Nagpur', state: 'Maharashtra', lat: 21.1458, lng: 79.0882, category: 'Safe', soe: 62.1, quality: 'Normal', advice: 'Central India basaltic plateau. Sustainable recharge.' },
+  { name: 'Patna Sadar', district: 'Patna', state: 'Bihar', lat: 25.5941, lng: 85.1376, category: 'Safe', soe: 48.6, quality: 'Arsenic (>0.01 mg/L)', advice: 'Gangetic alluvium. Safe quantity, but test deep wells for Arsenic contamination.' },
+  { name: 'Varanasi', district: 'Varanasi', state: 'Uttar Pradesh', lat: 25.3176, lng: 82.9739, category: 'Semi-Critical', soe: 76.2, quality: 'Normal', advice: 'High urban abstraction. Implement percolation wells along ghat catchment.' },
+  { name: 'Kolkata', district: 'Kolkata', state: 'West Bengal', lat: 22.5726, lng: 88.3639, category: 'Safe', soe: 58.2, quality: 'Arsenic', advice: 'Deltaic alluvium. High recharge, arsenic filtration filters advised.' },
+  { name: 'Hyderabad (Serilingampally)', district: 'Hyderabad', state: 'Telangana', lat: 17.3850, lng: 78.4867, category: 'Semi-Critical', soe: 78.9, quality: 'Fluoride', advice: 'Crystalline granite aquifer with high fluoride. Rooftop recharge compulsory.' },
+  { name: 'Bhopal (Huzur)', district: 'Bhopal', state: 'Madhya Pradesh', lat: 23.2599, lng: 77.4126, category: 'Safe', soe: 61.4, quality: 'Normal', advice: 'Vindhyan sandstone & basalt. Safe water balance.' },
+  { name: 'Guwahati', district: 'Kamrup', state: 'Assam', lat: 26.1445, lng: 91.7362, category: 'Safe', soe: 24.1, quality: 'Iron (>1.0 mg/L)', advice: 'Brahmaputra alluvium. Abundant water resource (SoE 24%). Iron removal plants recommended.' },
+  { name: 'Thiruvananthapuram', district: 'Thiruvananthapuram', state: 'Kerala', lat: 8.5241, lng: 76.9366, category: 'Safe', soe: 51.3, quality: 'Normal', advice: 'Coastal & laterite aquifer. High annual monsoon recharge.' }
 ];
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -34,6 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchCropAdvice();
   fetchGovGrid();
   loadNationalDashboard();
+  loadWaterQualityData();
+  loadDepthTrendsData();
 });
 
 // ----------------- TAB SWITCHER -----------------
@@ -52,21 +56,21 @@ function switchTab(tabId) {
   }
 }
 
-// ----------------- BACKEND HEALTH CHECK -----------------
+// ----------------- HEALTH CHECK -----------------
 async function checkBackendHealth() {
   try {
     const res = await fetch('/api/health');
     const data = await res.json();
-    const statusEl = document.getElementById('lmstudio-status');
+    const statusEl = document.getElementById('telemetry-status');
     if (statusEl && data.status === 'online') {
-      statusEl.textContent = `${data.llm_provider}`;
+      statusEl.textContent = `LMStudio (${data.llm_provider}) Connected`;
     }
   } catch (e) {
-    console.warn('Backend not responding:', e);
+    console.warn('Backend check:', e);
   }
 }
 
-// ----------------- AI CHAT FUNCTIONALITY -----------------
+// ----------------- AI CHAT & LANGUAGE -----------------
 function toggleLanguage() {
   currentLanguage = currentLanguage === 'en' ? 'hi' : 'en';
   document.getElementById('lang-btn').textContent = currentLanguage === 'en' ? '🌐 English (EN)' : '🌐 हिंदी (HI)';
@@ -77,11 +81,18 @@ function clearChat() {
   container.innerHTML = `
     <div class="chat-bubble assistant">
       <div>
-        <strong>Namaste!</strong> I am <strong>I.G.R.I.S.</strong>, your AI virtual assistant for the national <strong>INGRES</strong> groundwater portal.<br/><br/>
-        Ask me about any <strong>State, District, or Block across India (6,635+ blocks indexed)</strong> to get verified extraction rates, water table depths, and borewell safety recommendations.
+        <strong style="color: var(--cyan);">Namaste & Welcome!</strong> I am <strong>I.G.R.I.S.</strong>, your AI virtual assistant for the national <strong>INGRES</strong> groundwater information system.<br/><br/>
+        I have access to the complete <strong>Ground Water Resource Assessment (GWRA-2025)</strong> dataset covering:
+        <ul style="margin: 0.5rem 0 0.5rem 1.5rem; line-height: 1.6; color: var(--text-sub);">
+          <li><strong>6,635 Assessment Blocks</strong> with official stage of extraction (SoE) categorizations.</li>
+          <li><strong>141 State Water Quality Profiles</strong> (Arsenic, Fluoride, Salinity/EC, Uranium, Nitrate).</li>
+          <li><strong>61 Seasonal Aquifer Depth Trends</strong> (Pre-monsoon vs Post-monsoon water tables).</li>
+          <li><strong>CGWA Borewell NOC Compliance & Guidelines</strong>.</li>
+        </ul>
+        Ask me any question in <strong>English</strong> or <strong>हिंदी</strong> below!
       </div>
-      <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.5rem;">
-        Official CGWB / GEC-2015 Knowledge Base
+      <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.6rem;">
+        Official CGWB / GEC-2015 Hydrological Engine
       </div>
     </div>
   `;
@@ -97,6 +108,10 @@ async function sendMessage() {
   const query = inputEl.value.trim();
   if (!query) return;
 
+  // Auto-detect Hindi characters
+  const isHindiQuery = /[\u0900-\u097F]/.test(query);
+  const activeLang = isHindiQuery ? 'hi' : currentLanguage;
+
   appendMessage('user', query);
   inputEl.value = '';
 
@@ -109,7 +124,7 @@ async function sendMessage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: query,
-        language: currentLanguage
+        language: activeLang
       })
     });
 
@@ -129,8 +144,8 @@ function appendMessage(sender, text, visualization = null, source = 'I.G.R.I.S. 
   msgEl.className = `chat-bubble ${sender}`;
 
   let formattedText = text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`(.*?)`/g, '<code style="background: rgba(0,0,0,0.3); padding: 2px 5px; border-radius: 4px; color: #38bdf8;">$1</code>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong style="color: #ffffff;">$1</strong>')
+    .replace(/`([^`]+)`/g, '<code style="background: rgba(0, 240, 255, 0.1); border: 1px solid rgba(0, 240, 255, 0.25); padding: 2px 6px; border-radius: 4px; color: #00f0ff; font-weight: 600;">$1</code>')
     .replace(/\n/g, '<br/>');
 
   let html = `<div>${formattedText}</div>`;
@@ -142,30 +157,39 @@ function appendMessage(sender, text, visualization = null, source = 'I.G.R.I.S. 
     if (visualization.type === 'block_card') {
       const badgeClass = visualization.category === 'Safe' ? 'safe' : visualization.category === 'Semi-Critical' ? 'semi' : visualization.category === 'Critical' ? 'crit' : 'over';
       html += `
-        <div style="margin-top: 0.85rem; padding: 1rem; border-radius: 12px; background: rgba(15, 23, 42, 0.85); border: 1px solid ${visualization.status_color};">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <strong>${visualization.title}</strong>
+        <div style="margin-top: 1rem; padding: 1.1rem; border-radius: 12px; background: rgba(10, 20, 36, 0.95); border: 1px solid ${visualization.status_color};">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+            <strong style="font-size: 1.05rem; color: #fff;">${visualization.title}</strong>
             <span class="badge badge-${badgeClass}">${visualization.category}</span>
           </div>
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; font-size: 0.78rem;">
-            <div class="glass-card" style="text-align: center;"><span style="color: var(--text-muted)">State:</span><br/><strong>${visualization.state_name}</strong></div>
-            <div class="glass-card" style="text-align: center;"><span style="color: var(--text-muted)">District:</span><br/><strong>${visualization.district_name}</strong></div>
-            <div class="glass-card" style="text-align: center;"><span style="color: var(--text-muted)">Borewell:</span><br/><strong style="color: ${visualization.status_color}">${visualization.category === 'Safe' ? 'Permitted' : 'NOC Required'}</strong></div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; font-size: 0.8rem;">
+            <div class="glass-card" style="text-align: center;"><span style="color: var(--text-dim)">State:</span><br/><strong>${visualization.state_name}</strong></div>
+            <div class="glass-card" style="text-align: center;"><span style="color: var(--text-dim)">District:</span><br/><strong>${visualization.district_name}</strong></div>
+            <div class="glass-card" style="text-align: center;"><span style="color: var(--text-dim)">Borewell:</span><br/><strong style="color: ${visualization.status_color}">${visualization.category === 'Safe' ? 'Permitted' : 'NOC Mandatory'}</strong></div>
           </div>
         </div>
       `;
     } else if (visualization.type === 'state_analytics') {
       html += `
-        <div style="margin-top: 0.85rem; padding: 1rem; border-radius: 12px; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.3);">
-          <strong style="color: #38bdf8; display: block; margin-bottom: 0.75rem;">${visualization.title}</strong>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: center;">
-            <div style="height: 160px; position: relative;">
+        <div style="margin-top: 1rem; padding: 1.1rem; border-radius: 12px; background: rgba(10, 20, 36, 0.95); border: 1px solid rgba(0, 240, 255, 0.35);">
+          <strong style="color: var(--cyan); display: block; font-size: 1.05rem; margin-bottom: 0.85rem;">${visualization.title}</strong>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; align-items: center;">
+            <div style="height: 170px; position: relative;">
               <canvas id="${chartId}"></canvas>
             </div>
-            <div style="font-size: 0.78rem; display: flex; flex-direction: column; gap: 0.4rem;">
-              <div class="glass-card">SoE: <strong style="color: ${visualization.metrics.stage_of_extraction > 100 ? '#ef4444' : '#10b981'}">${visualization.metrics.stage_of_extraction}%</strong></div>
-              <div class="glass-card">Recharge: <strong>${visualization.metrics.total_recharge_bcm} BCM</strong></div>
-              <div class="glass-card">Extraction: <strong>${visualization.metrics.total_extraction_bcm} BCM</strong></div>
+            <div style="font-size: 0.8rem; display: flex; flex-direction: column; gap: 0.45rem;">
+              <div class="glass-card" style="display: flex; justify-content: space-between;">
+                <span style="color: var(--text-sub)">Stage of Extraction:</span>
+                <strong style="color: ${visualization.metrics.stage_of_extraction > 100 ? '#ef4444' : '#34d399'}">${visualization.metrics.stage_of_extraction}%</strong>
+              </div>
+              <div class="glass-card" style="display: flex; justify-content: space-between;">
+                <span style="color: var(--text-sub)">Annual Recharge:</span>
+                <strong style="color: var(--cyan);">${visualization.metrics.total_recharge_bcm} BCM</strong>
+              </div>
+              <div class="glass-card" style="display: flex; justify-content: space-between;">
+                <span style="color: var(--text-sub)">Annual Extraction:</span>
+                <strong style="color: #f59e0b;">${visualization.metrics.total_extraction_bcm} BCM</strong>
+              </div>
             </div>
           </div>
         </div>
@@ -194,9 +218,14 @@ function appendMessage(sender, text, visualization = null, source = 'I.G.R.I.S. 
   }
 
   html += `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; font-size: 0.7rem; color: var(--text-muted);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.6rem; font-size: 0.72rem; color: var(--text-dim);">
       <span>${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ${source}</span>
-      ${sender === 'assistant' ? `<button onclick="speakResponse(this)" data-text="${encodeURIComponent(text)}" class="btn-secondary" style="padding: 0.15rem 0.4rem; font-size: 0.7rem;">🔊 Read</button>` : ''}
+      ${sender === 'assistant' ? `
+        <div style="display: flex; gap: 0.3rem;">
+          <button onclick="copyResponse(this)" data-text="${encodeURIComponent(text)}" class="btn-secondary" style="padding: 0.15rem 0.45rem; font-size: 0.7rem;">📋 Copy</button>
+          <button onclick="speakResponse(this)" data-text="${encodeURIComponent(text)}" class="btn-secondary" style="padding: 0.15rem 0.45rem; font-size: 0.7rem;">🔊 Read</button>
+        </div>
+      ` : ''}
     </div>
   `;
 
@@ -211,8 +240,8 @@ function appendLoadingBubble(id) {
   el.id = id;
   el.className = 'chat-bubble assistant';
   el.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-secondary);">
-      <span class="pulse-dot" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span>
+    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-sub);">
+      <span class="pulse-dot" style="background: var(--cyan); box-shadow: 0 0 10px var(--cyan);"></span>
       <span>Querying INGRES Master DB & Synthesizing via Gemma-4...</span>
     </div>
   `;
@@ -225,10 +254,17 @@ function removeLoadingBubble(id) {
   if (el) el.remove();
 }
 
-// Voice Input & Output
+function copyResponse(btn) {
+  const text = decodeURIComponent(btn.getAttribute('data-text'));
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✅ Copied';
+    setTimeout(() => btn.textContent = '📋 Copy', 2000);
+  });
+}
+
 function toggleVoiceInput() {
   if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-    alert('Voice input is supported in Chrome/Edge.');
+    alert('Voice input is supported in Chrome, Edge, and modern browsers.');
     return;
   }
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -255,7 +291,7 @@ function speakResponse(btn) {
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const ut = new SpeechSynthesisUtterance(text);
-  ut.lang = currentLanguage === 'hi' ? 'hi-IN' : 'en-IN';
+  ut.lang = /[\u0900-\u097F]/.test(text) ? 'hi-IN' : 'en-IN';
   window.speechSynthesis.speak(ut);
 }
 
@@ -281,7 +317,7 @@ function getCategoryColor(cat) {
     case 'Semi-Critical': return '#f59e0b';
     case 'Critical': return '#f97316';
     case 'Over-Exploited': return '#ef4444';
-    default: return '#38bdf8';
+    default: return '#00f0ff';
   }
 }
 
@@ -301,7 +337,7 @@ function renderMapMarkers(spots) {
     }).addTo(mapInstance);
 
     marker.bindPopup(`
-      <div style="padding: 4px; min-width: 170px;">
+      <div style="padding: 4px; min-width: 180px;">
         <strong style="font-size: 0.95rem; color: #fff;">${spot.name}</strong>
         <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">
           <div><strong>District:</strong> ${spot.district}, ${spot.state}</div>
@@ -329,9 +365,10 @@ function showSelectedLocation(spot) {
   badge.textContent = spot.category;
   badge.className = `badge badge-${spot.category === 'Safe' ? 'safe' : spot.category === 'Semi-Critical' ? 'semi' : spot.category === 'Critical' ? 'crit' : 'over'}`;
   
-  document.getElementById('selected-advice').textContent = spot.category === 'Over-Exploited'
+  document.getElementById('selected-soe-val').textContent = spot.soe ? `Stage of Extraction: ${spot.soe}%` : '';
+  document.getElementById('selected-advice').textContent = spot.advice || (spot.category === 'Over-Exploited'
     ? 'Extraction exceeds replenishable recharge. Mandatory 100-200% rainwater harvesting required for any industrial NOC.'
-    : 'Groundwater extraction within sustainable threshold. Construct percolation tanks to maintain levels.';
+    : 'Groundwater extraction within sustainable threshold. Construct percolation tanks to maintain levels.');
 }
 
 function filterMapCategory(cat) {
@@ -351,8 +388,8 @@ async function searchMapLocations(query) {
     const data = await res.json();
     resultsEl.innerHTML = data.map(b => `
       <div onclick="selectSearchBlock('${b.block_name}', '${b.district_name}', '${b.state_name}', '${b.category}')" 
-           style="padding: 0.4rem; background: rgba(15, 23, 42, 0.85); border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; font-size: 0.78rem;">
-        <div><strong>${b.block_name}</strong> <span style="color: var(--text-muted)">(${b.district_name})</span></div>
+           style="padding: 0.45rem; background: rgba(15, 28, 48, 0.9); border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; font-size: 0.78rem; border: 1px solid rgba(255,255,255,0.05);">
+        <div><strong>${b.block_name}</strong> <span style="color: var(--text-dim)">(${b.district_name})</span></div>
         <span class="badge badge-${b.category === 'Safe' ? 'safe' : b.category === 'Semi-Critical' ? 'semi' : b.category === 'Critical' ? 'crit' : 'over'}">${b.category}</span>
       </div>
     `).join('');
@@ -366,7 +403,103 @@ function selectSearchBlock(block, district, state, category) {
   showSelectedLocation({ name: block, district, state, category });
 }
 
-// ----------------- SMART SUGGESTOR -----------------
+// ----------------- 3. WATER QUALITY MATRIX -----------------
+async function loadWaterQualityData(filterParam = '') {
+  try {
+    const res = await fetch(`/api/quality${filterParam ? `?parameter=${encodeURIComponent(filterParam)}` : ''}`);
+    allQualityData = await res.json();
+    renderWaterQualityCards(allQualityData);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function filterWaterQuality(param) {
+  loadWaterQualityData(param);
+}
+
+function renderWaterQualityCards(items) {
+  const container = document.getElementById('water-quality-grid');
+  if (!container) return;
+
+  const healthEffects = {
+    'Fluoride': { risk: 'Dental & Skeletal Fluorosis, joint stiffness', tech: 'Activated Alumina / Nalgonda Technique / RO' },
+    'Arsenic': { risk: 'Skin lesions, blackfoot disease, internal cancers', tech: 'Iron Coagulation / Adsorption Filtration' },
+    'Salinity': { risk: 'Hypertension, soil salinity, non-potable taste', tech: 'Reverse Osmosis (RO) Desalination' },
+    'EC': { risk: 'High mineral salinity, corrosion in pipes', tech: 'Reverse Osmosis (RO) Demineralization' },
+    'Nitrate': { risk: 'Methemoglobinemia (Blue Baby Syndrome) in infants', tech: 'Ion Exchange / Electro-dialysis' },
+    'Uranium': { risk: 'Kidney toxicity, nephrotoxicity, radiological risk', tech: 'Ion Exchange / Polyphosphate Filtration' }
+  };
+
+  container.innerHTML = items.slice(0, 30).map(q => {
+    const info = healthEffects[q.parameter] || { risk: 'Digestive & metabolic risks', tech: 'Membrane Filtration' };
+    const isExceeded = q.pct_above_limit > 0;
+
+    return `
+      <div class="glass-card" style="border-left: 4px solid ${isExceeded ? '#ef4444' : '#10b981'};">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+          <div>
+            <h4 style="font-size: 1rem; color: #fff;">${q.state_name}</h4>
+            <span style="font-size: 0.72rem; color: var(--text-dim);">${q.num_samples} Laboratory Samples Tested</span>
+          </div>
+          <span style="font-size: 0.72rem; font-weight: 800; padding: 0.15rem 0.5rem; border-radius: 4px; background: rgba(0, 240, 255, 0.15); color: var(--cyan);">
+            ${q.parameter}
+          </span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; font-size: 0.76rem; margin: 0.6rem 0;">
+          <div class="glass-card" style="padding: 0.4rem 0.6rem;">
+            <span style="color: var(--text-dim);">BIS Limit:</span><br/>
+            <strong>${q.permissible_limit}</strong>
+          </div>
+          <div class="glass-card" style="padding: 0.4rem 0.6rem;">
+            <span style="color: var(--text-dim);">Exceeding:</span><br/>
+            <strong style="color: ${isExceeded ? '#ef4444' : '#34d399'};">${q.pct_above_limit}% (${q.samples_above_limit} samples)</strong>
+          </div>
+        </div>
+
+        <div style="font-size: 0.74rem; color: var(--text-sub); border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.4rem;">
+          <div>⚠️ <strong style="color: #fff;">Health Risk:</strong> ${info.risk}</div>
+          <div style="margin-top: 2px;">💡 <strong style="color: var(--cyan);">Purification:</strong> ${info.tech}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ----------------- 4. SEASONAL DEPTH TRENDS -----------------
+async function loadDepthTrendsData() {
+  try {
+    const res = await fetch('/api/depth-trends');
+    allDepthData = await res.json();
+    renderDepthTrends();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function renderDepthTrends(filterState = '') {
+  const container = document.getElementById('depth-trends-grid');
+  if (!container) return;
+
+  const filtered = allDepthData.filter(d => d.state_name.toLowerCase().includes(filterState.toLowerCase()));
+
+  container.innerHTML = filtered.map(d => `
+    <div class="glass-card" style="border-top: 3px solid #34d399;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+        <h4 style="font-size: 1rem; color: #fff;">${d.state_name}</h4>
+        <span style="font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 4px; background: rgba(52, 211, 153, 0.15); color: #34d399; font-weight: 700;">
+          ${d.season}
+        </span>
+      </div>
+      <p style="font-size: 0.8rem; color: var(--text-sub); line-height: 1.5;">
+        ${d.depth_summary}
+      </p>
+    </div>
+  `).join('');
+}
+
+// ----------------- 5. SMART SUGGESTOR -----------------
 function switchSuggestorTab(subTab) {
   document.getElementById('suggestor-citizen-section').style.display = subTab === 'citizen' ? 'grid' : 'none';
   document.getElementById('suggestor-gov-section').style.display = subTab === 'gov' ? 'block' : 'none';
@@ -388,23 +521,23 @@ async function calculateRWH() {
     const d = await res.json();
     
     document.getElementById('rwh-results').innerHTML = `
-      <div class="glass-card" style="border-left: 3px solid #38bdf8;">
-        <div style="font-size: 0.75rem; color: var(--text-muted);">Annual Yield</div>
-        <div style="font-size: 1.3rem; font-weight: 800; color: #38bdf8;">${d.annual_harvestable_liters.toLocaleString()} L</div>
-        <div style="font-size: 0.72rem; color: var(--text-secondary);">${d.annual_rainfall_mm} mm rainfall</div>
+      <div class="glass-card" style="border-left: 3px solid var(--cyan);">
+        <div style="font-size: 0.75rem; color: var(--text-dim);">Annual Water Harvested</div>
+        <div style="font-size: 1.35rem; font-weight: 800; color: var(--cyan);">${d.annual_harvestable_liters.toLocaleString()} L</div>
+        <div style="font-size: 0.72rem; color: var(--text-sub);">${d.annual_rainfall_mm} mm annual rainfall</div>
       </div>
       <div class="glass-card" style="border-left: 3px solid #10b981;">
-        <div style="font-size: 0.75rem; color: var(--text-muted);">Annual Savings</div>
-        <div style="font-size: 1.3rem; font-weight: 800; color: #10b981;">₹ ${d.estimated_annual_savings_inr.toLocaleString()}</div>
-        <div style="font-size: 0.72rem; color: var(--text-secondary);">${d.equivalent_family_days} days family supply</div>
+        <div style="font-size: 0.75rem; color: var(--text-dim);">Annual Water Bill Savings</div>
+        <div style="font-size: 1.35rem; font-weight: 800; color: #10b981;">₹ ${d.estimated_annual_savings_inr.toLocaleString()}</div>
+        <div style="font-size: 0.72rem; color: var(--text-sub);">${d.equivalent_family_days} days family supply</div>
       </div>
-      <div class="glass-card" style="grid-column: span 2; background: rgba(15, 23, 42, 0.9);">
+      <div class="glass-card" style="grid-column: span 2; background: rgba(10, 20, 36, 0.95);">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div>
-            <strong>Recommended Sump Tank</strong>
-            <div style="font-size: 0.74rem; color: var(--text-muted);">25% peak intensity surge sizing</div>
+            <strong style="color: #fff;">Recommended Sump Storage Tank</strong>
+            <div style="font-size: 0.74rem; color: var(--text-dim);">25% peak intensity monsoon surge sizing</div>
           </div>
-          <span style="font-size: 1.1rem; font-weight: 800; color: #f59e0b;">${d.recommended_tank_capacity_liters.toLocaleString()} Liters</span>
+          <span style="font-size: 1.15rem; font-weight: 800; color: #f59e0b;">${d.recommended_tank_capacity_liters.toLocaleString()} Liters</span>
         </div>
       </div>
     `;
@@ -424,17 +557,17 @@ async function fetchCropAdvice() {
     const d = await res.json();
 
     document.getElementById('crop-results').innerHTML = `
-      <div style="padding: 0.6rem; border-radius: 8px; background: ${d.is_water_stressed ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'}; border: 1px solid ${d.is_water_stressed ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}; font-size: 0.78rem;">
-        <strong style="color: ${d.is_water_stressed ? '#f87171' : '#34d399'}">${d.is_water_stressed ? '⚠️ High Depletion Zone' : '🟢 Sustainable Aquifer'}</strong>
-        <div style="font-size: 0.74rem; color: var(--text-secondary); margin-top: 2px;">${d.current_crop_water_drain}</div>
+      <div style="padding: 0.65rem 0.85rem; border-radius: 8px; background: ${d.is_water_stressed ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'}; border: 1px solid ${d.is_water_stressed ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}; font-size: 0.78rem;">
+        <strong style="color: ${d.is_water_stressed ? '#f87171' : '#34d399'}">${d.is_water_stressed ? '⚠️ High Groundwater Depletion Zone' : '🟢 Sustainable Aquifer Status'}</strong>
+        <div style="font-size: 0.74rem; color: var(--text-sub); margin-top: 2px;">${d.current_crop_water_drain}</div>
       </div>
       ${d.recommendations.map(r => `
         <div class="glass-card" style="font-size: 0.78rem;">
           <div style="display: flex; justify-content: space-between;">
-            <strong style="color: #38bdf8;">${r.crop}</strong>
+            <strong style="color: var(--cyan);">${r.crop}</strong>
             <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 4px; background: rgba(16,185,129,0.2); color: #34d399; font-weight: 700;">Save ${r.savings_vs_paddy_pct}</span>
           </div>
-          <div style="color: var(--text-secondary); margin-top: 2px;">${r.recommendation_reason}</div>
+          <div style="color: var(--text-sub); margin-top: 2px;">${r.recommendation_reason}</div>
           <div style="color: #f59e0b; font-size: 0.72rem; margin-top: 4px;">🎯 Subsidy: ${r.subsidy_applicable}</div>
         </div>
       `).join('')}
@@ -454,9 +587,9 @@ async function fetchGovGrid() {
         <td style="color: #f87171; font-weight: 600;">${r.over_exploited_blocks} Blocks</td>
         <td style="font-weight: 700; color: ${r.stage_of_extraction_pct > 100 ? '#ef4444' : '#f59e0b'};">${r.stage_of_extraction_pct}%</td>
         <td><span class="badge badge-${r.priority === 'CRITICAL' ? 'over' : 'semi'}">${r.priority}</span></td>
-        <td style="color: #38bdf8;">${r.recommended_source}</td>
+        <td style="color: var(--cyan); font-weight: 500;">${r.recommended_source}</td>
         <td style="color: #34d399; font-weight: 700;">${r.estimated_recharge_potential_mcm} MCM</td>
-        <td style="color: var(--text-secondary); font-size: 0.75rem; max-width: 280px;">${r.strategy}</td>
+        <td style="color: var(--text-sub); font-size: 0.75rem; max-width: 280px;">${r.strategy}</td>
       </tr>
     `).join('');
   } catch (e) {
@@ -464,7 +597,7 @@ async function fetchGovGrid() {
   }
 }
 
-// ----------------- NATIONAL DASHBOARD -----------------
+// ----------------- 6. NATIONAL DASHBOARD & EXPORT -----------------
 async function loadNationalDashboard() {
   try {
     const [natRes, statesRes] = await Promise.all([
@@ -476,25 +609,25 @@ async function loadNationalDashboard() {
 
     // Render KPIs
     document.getElementById('national-kpi-row').innerHTML = `
-      <div class="glass-card" style="border-left: 4px solid #38bdf8;">
-        <div style="font-size: 0.75rem; color: var(--text-muted);">Annual Recharge</div>
-        <div style="font-size: 1.45rem; font-weight: 800; color: #38bdf8; margin: 2px 0;">${nat.national_recharge_bcm} BCM</div>
-        <div style="font-size: 0.72rem; color: var(--text-secondary);">Natural Inflow</div>
+      <div class="glass-card" style="border-left: 4px solid var(--cyan);">
+        <div style="font-size: 0.74rem; color: var(--text-dim); text-transform: uppercase;">Total Annual Recharge</div>
+        <div style="font-size: 1.55rem; font-weight: 800; color: var(--cyan); margin: 2px 0;">${nat.national_recharge_bcm} BCM</div>
+        <div style="font-size: 0.72rem; color: var(--text-sub);">Natural Replenishable Inflow</div>
       </div>
       <div class="glass-card" style="border-left: 4px solid #f59e0b;">
-        <div style="font-size: 0.75rem; color: var(--text-muted);">Annual Extraction</div>
-        <div style="font-size: 1.45rem; font-weight: 800; color: #f59e0b; margin: 2px 0;">${nat.national_extraction_bcm} BCM</div>
-        <div style="font-size: 0.72rem; color: var(--text-secondary);">Irrigation + Domestic + Industry</div>
+        <div style="font-size: 0.74rem; color: var(--text-dim); text-transform: uppercase;">Total Annual Extraction</div>
+        <div style="font-size: 1.55rem; font-weight: 800; color: #f59e0b; margin: 2px 0;">${nat.national_extraction_bcm} BCM</div>
+        <div style="font-size: 0.72rem; color: var(--text-sub);">Irrigation (87%) + Domestic + Industry</div>
       </div>
       <div class="glass-card" style="border-left: 4px solid #10b981;">
-        <div style="font-size: 0.75rem; color: var(--text-muted);">National SoE</div>
-        <div style="font-size: 1.45rem; font-weight: 800; color: #10b981; margin: 2px 0;">${nat.national_soe_pct}%</div>
+        <div style="font-size: 0.74rem; color: var(--text-dim); text-transform: uppercase;">National Stage of Extraction</div>
+        <div style="font-size: 1.55rem; font-weight: 800; color: #10b981; margin: 2px 0;">${nat.national_soe_pct}%</div>
         <div style="font-size: 0.72rem; color: #34d399;">Safe Band (&lt; 70%)</div>
       </div>
       <div class="glass-card" style="border-left: 4px solid #a855f7;">
-        <div style="font-size: 0.75rem; color: var(--text-muted);">Total Units</div>
-        <div style="font-size: 1.45rem; font-weight: 800; color: #c084fc; margin: 2px 0;">${nat.total_blocks.toLocaleString()} Blocks</div>
-        <div style="font-size: 0.72rem; color: var(--text-secondary);">74.5% Safe • 11% Over-Exploited</div>
+        <div style="font-size: 0.74rem; color: var(--text-dim); text-transform: uppercase;">Monitored Units</div>
+        <div style="font-size: 1.55rem; font-weight: 800; color: #c084fc; margin: 2px 0;">${nat.total_blocks.toLocaleString()} Blocks</div>
+        <div style="font-size: 0.72rem; color: var(--text-sub);">74.5% Safe • 11% Over-Exploited</div>
       </div>
     `;
 
@@ -560,10 +693,10 @@ function renderStatesTable(search = '') {
   tbody.innerHTML = filtered.map(s => `
     <tr>
       <td style="font-weight: 600; color: #fff;">${s.state_name}</td>
-      <td style="color: #38bdf8;">${s.total_annual_recharge}</td>
+      <td style="color: var(--cyan);">${s.total_annual_recharge}</td>
       <td style="color: #f59e0b;">${s.total_annual_extraction}</td>
-      <td style="color: var(--text-secondary);">${s.irrigation_extraction}</td>
-      <td style="color: var(--text-secondary);">${s.domestic_extraction}</td>
+      <td style="color: var(--text-sub);">${s.irrigation_extraction}</td>
+      <td style="color: var(--text-sub);">${s.domestic_extraction}</td>
       <td style="color: #34d399;">${s.net_availability_future}</td>
       <td>
         <span class="badge badge-${s.stage_of_extraction_pct <= 70 ? 'safe' : s.stage_of_extraction_pct <= 90 ? 'semi' : s.stage_of_extraction_pct <= 100 ? 'crit' : 'over'}">
@@ -572,4 +705,27 @@ function renderStatesTable(search = '') {
       </td>
     </tr>
   `).join('');
+}
+
+function exportStatesCSV() {
+  if (!allStatesData.length) return;
+  const headers = ['State/UT', 'Annual Recharge (BCM)', 'Total Extraction (BCM)', 'Irrigation (BCM)', 'Domestic (BCM)', 'Future Available (BCM)', 'Stage of Extraction (%)'];
+  const rows = allStatesData.map(s => [
+    `"${s.state_name}"`,
+    s.total_annual_recharge,
+    s.total_annual_extraction,
+    s.irrigation_extraction,
+    s.domestic_extraction,
+    s.net_availability_future,
+    s.stage_of_extraction_pct
+  ]);
+
+  const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement('a');
+  link.setAttribute('href', encodedUri);
+  link.setAttribute('download', 'GWRA_2025_All_India_State_Groundwater_Registry.csv');
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }

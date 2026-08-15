@@ -285,6 +285,21 @@ def get_dam_and_aquifer_grid():
     """
     return db_service.get_water_balancing_recommendations()
 
+@app.get("/api/quality")
+def get_water_quality(state: str = "", parameter: str = ""):
+    """
+    Returns water quality contamination records (Arsenic, Fluoride, Salinity, Uranium, Nitrate).
+    """
+    return db_service.get_all_water_quality(state=state, parameter=parameter)
+
+@app.get("/api/depth-trends")
+def get_depth_trends(state: str = ""):
+    """
+    Returns seasonal depth-to-water level trends across Indian states.
+    """
+    return db_service.get_all_depth_trends(state=state)
+
+
 # Mount vanilla HTML/CSS/JS frontend directly at root
 frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
 if os.path.exists(frontend_dir):
