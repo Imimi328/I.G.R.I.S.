@@ -10,7 +10,7 @@ const appState = {
 const $ = (selector) => document.querySelector(selector);
 const escapeHTML = (value = '') => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 const formatNumber = (value) => Number(value || 0).toLocaleString('en-IN');
-const API_BASE_URL = '';
+const API_BASE_URL = 'https://api.igris.site';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
 const apiFetch = (path, options = {}) => fetch(apiUrl(path), { ...options, credentials: 'include' });
 const resolveApiAsset = (url) => String(url || '').startsWith('/api/') ? apiUrl(url) : url;
@@ -311,6 +311,7 @@ function initHome() {
 async function loadBlockCount() {
   try {
     const response = await apiFetch('/api/stats/national');
+    if (!response.ok) throw new Error(`National summary request failed (${response.status})`);
     const data = await response.json();
     const target = $('#home-block-count');
     if (target) target.textContent = formatNumber(data.total_blocks);
