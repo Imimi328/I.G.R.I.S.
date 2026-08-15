@@ -40,23 +40,13 @@ INGRES Government Data & Reports
 
 ```
 .
-├── agent/                                    # Project memory, architecture & documentation
-│   ├── memory.md                             # Long-term project memory & discoveries
-│   ├── tasks.md                              # Backlog and completed tasks
-│   ├── architecture.md                       # System architecture specification
-│   ├── rules.md                              # Development rules
-│   └── problem_and_solution_guide.md         # Illustrated domain guide
 ├── data/
 │   ├── processed/
-│   │   ├── ingres_master.db                  # Unified SQLite Master Database
-│   │   ├── state_factsheets_corpus.json      # Semantic RAG Knowledge Corpus
+│   │   ├── ingres_master.db                  # Unified SQLite Master Database (6,635 blocks)
+│   │   ├── state_factsheets_corpus.json      # Semantic RAG Knowledge Corpus (36 states)
 │   │   └── india_all_blocks_categorization_2025.csv # 6,635 Block Records
-│   ├── raw/                                  # Raw CGWB official PDFs & OpenCity CSVs
-│   │   ├── cgwb_official/
-│   │   ├── state_fact_sheets_2025/           # 36 State Fact Sheets (2025)
-│   │   └── opencity_gw_2024/                 # State & City CSVs
 │   ├── build_master_database.py              # Master data ingestion pipeline
-│   └── generate_pdf_guide.py                 # PDF generation script
+│   └── generate_pdf_guide.py                 # PDF documentation generator
 ├── SIH2026_INGRES_AI_Assistant_Complete_Guide.pdf # Complete Project Guide for NotebookLM
 └── README.md
 ```
