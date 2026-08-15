@@ -7,6 +7,7 @@ This file acts as the project's long-term memory. It should be updated whenever 
 - **Problem Statement:** SIH25066
 - **Title:** Development of an AI-driven ChatBOT for INGRES as a virtual assistant
 - **Project Name:** **IGRIS** (**I**ntelligent **G**roundwater **R**esource **I**nsight **S**ystem / **I**NGRES **G**roundwater **R**etrieval & **I**ntelligence **S**ystem)
+- **GitHub Repository:** [https://github.com/Imimi328/I.G.R.I.S.](https://github.com/Imimi328/I.G.R.I.S.)
 - **Organization:** Ministry of Jal Shakti / Central Ground Water Board (CGWB)
 - **Category:** Software
 - **Theme:** Smart Automation
