@@ -6,7 +6,7 @@
 > **Category:** Software | **Theme:** Smart Automation
 
 [![Live application](https://img.shields.io/badge/Live-igris.site-087f78?style=for-the-badge)](https://igris.site)
-[![API status](https://img.shields.io/badge/API-api.igris.site-0d4748?style=for-the-badge)](https://api.igris.site/api/health)
+[![API status](https://img.shields.io/badge/API-protected_gateway-0d4748?style=for-the-badge)](https://igris.site/api/health)
 
 ---
 
@@ -96,7 +96,7 @@ Nginx → FastAPI (127.0.0.1:8010) → SQLite / CGWB data / DeepSeek
 9. **Fail-closed model control**: When the administrator disables DeepSeek, chat returns `503` before conversation creation, evidence gathering, fallback generation, or any paid request.
 10. **Private citizen accounts**: Google verifies identity, every functional API requires a valid session, and account-owned conversations retain their evidence canvas for later review.
 
-![I.G.R.I.S. conversational evidence canvas](docs/chat-preview.png)
+![I.G.R.I.S. protected conversational workspace](docs/chat-preview.png)
 
 ---
 
