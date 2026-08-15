@@ -1,0 +1,29 @@
+[Unit]
+Description=I.G.R.I.S. FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=igris
+Group=igris
+WorkingDirectory=/opt/igris
+EnvironmentFile=/etc/igris/igris.env
+ExecStart=/opt/igris/.venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8010 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/opt/igris/data/runtime
+
+[Install]
+WantedBy=multi-user.target

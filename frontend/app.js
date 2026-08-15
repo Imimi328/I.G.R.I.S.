@@ -10,6 +10,10 @@ const appState = {
 const $ = (selector) => document.querySelector(selector);
 const escapeHTML = (value = '') => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 const formatNumber = (value) => Number(value || 0).toLocaleString('en-IN');
+const API_BASE_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname) ? '' : 'https://api.igris.site';
+const apiUrl = (path) => `${API_BASE_URL}${path}`;
+const apiFetch = (path, options = {}) => fetch(apiUrl(path), { ...options, credentials: 'include' });
+const resolveApiAsset = (url) => String(url || '').startsWith('/api/') ? apiUrl(url) : url;
 
 const CHAT_LANGUAGES = [
   ['en', 'English', 'en-IN'], ['as', 'অসমীয়া', 'as-IN'], ['bn', 'বাংলা', 'bn-IN'],
@@ -59,8 +63,8 @@ async function initAuth() {
   buildAuthUI();
   try {
     const [configResponse, meResponse] = await Promise.all([
-      fetch('/api/auth/config'),
-      fetch('/api/auth/me')
+      apiFetch('/api/auth/config'),
+      apiFetch('/api/auth/me')
     ]);
     appState.authConfig = configResponse.ok ? await configResponse.json() : { google_enabled: false };
     if (meResponse.ok) appState.user = (await meResponse.json()).user;
@@ -90,9 +94,20 @@ function buildAuthUI() {
       <p>Pages and official evidence stay public. Sign in only when you want I.G.R.I.S. to generate and privately save an answer.</p>
       <div class="google-signin-slot" id="google-signin-slot"><span>Loading Google sign-in…</span></div>
       <p class="auth-note" id="auth-note">I.G.R.I.S. stores your name, verified email, profile image and chat history. Your Google password is never shared with us.</p>
+    </dialog>
+    <dialog class="admin-dialog" id="admin-dialog">
+      <button class="auth-close" id="admin-close" type="button" aria-label="Close admin controls">×</button>
+      <p class="eyebrow">SERVER CONTROL PLANE</p>
+      <h2>LLM spend control</h2>
+      <p class="admin-summary" id="admin-summary">Loading protected server status…</p>
+      <label class="admin-switch"><input id="admin-llm-enabled" type="checkbox"><span>Allow paid DeepSeek generation</span></label>
+      <div class="admin-metrics" id="admin-metrics"></div>
+      <p class="auth-note">Turning this off is immediate and server-enforced. Citizens can still use the grounded fallback.</p>
     </dialog>`);
   $('#auth-close').addEventListener('click', () => $('#auth-dialog').close());
   $('#auth-dialog').addEventListener('click', (event) => { if (event.target === $('#auth-dialog')) $('#auth-dialog').close(); });
+  $('#admin-close').addEventListener('click', () => $('#admin-dialog').close());
+  $('#admin-llm-enabled').addEventListener('change', updateAdminLlmStatus);
 }
 
 function updateAuthUI() {
@@ -111,8 +126,9 @@ function toggleAccountMenu(button) {
   document.querySelector('.account-menu')?.remove();
   const menu = document.createElement('div');
   menu.className = 'account-menu';
-  menu.innerHTML = `<strong>${escapeHTML(appState.user.name)}</strong><span>${escapeHTML(appState.user.email)}</span>${$('#chat-history') ? '<button type="button" data-account-action="history">Saved chats</button>' : ''}<button type="button" data-account-action="signout">Sign out</button>`;
+  menu.innerHTML = `<strong>${escapeHTML(appState.user.name)}</strong><span>${escapeHTML(appState.user.email)}</span>${appState.user.is_admin ? '<button type="button" data-account-action="admin">Admin controls</button>' : ''}${$('#chat-history') ? '<button type="button" data-account-action="history">Saved chats</button>' : ''}<button type="button" data-account-action="signout">Sign out</button>`;
   button.parentElement.append(menu);
+  menu.querySelector('[data-account-action="admin"]')?.addEventListener('click', () => { menu.remove(); openAdminDialog(); });
   menu.querySelector('[data-account-action="history"]')?.addEventListener('click', () => { menu.remove(); openChatHistory(); });
   menu.querySelector('[data-account-action="signout"]').addEventListener('click', signOut);
   setTimeout(() => document.addEventListener('click', (event) => { if (!menu.contains(event.target) && event.target !== button) menu.remove(); }, { once: true }), 0);
@@ -162,7 +178,7 @@ async function handleGoogleCredential(response) {
   const slot = $('#google-signin-slot');
   slot.classList.add('is-loading');
   try {
-    const authResponse = await fetch('/api/auth/google', {
+    const authResponse = await apiFetch('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ credential: response.credential })
@@ -181,12 +197,50 @@ async function handleGoogleCredential(response) {
 }
 
 async function signOut() {
-  await fetch('/api/auth/logout', { method: 'POST' });
+  await apiFetch('/api/auth/logout', { method: 'POST' });
   appState.user = null;
   appState.chatHistory = [];
   appState.conversationId = null;
   document.querySelector('.account-menu')?.remove();
   updateAuthUI();
+}
+
+async function openAdminDialog() {
+  if (!appState.user?.is_admin) return;
+  const dialog = $('#admin-dialog');
+  dialog.showModal();
+  const response = await apiFetch('/api/admin/status');
+  if (!response.ok) {
+    $('#admin-summary').textContent = 'The protected status could not be loaded.';
+    return;
+  }
+  renderAdminStatus(await response.json());
+}
+
+async function updateAdminLlmStatus(event) {
+  const checkbox = event.currentTarget;
+  checkbox.disabled = true;
+  const response = await apiFetch('/api/admin/llm', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: checkbox.checked })
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    checkbox.checked = !checkbox.checked;
+    $('#admin-summary').textContent = data.detail || 'The server rejected that change.';
+  } else {
+    renderAdminStatus(data);
+  }
+  checkbox.disabled = false;
+}
+
+function renderAdminStatus(status) {
+  $('#admin-llm-enabled').checked = Boolean(status.enabled);
+  $('#admin-summary').textContent = status.configured
+    ? `${status.model} is ${status.enabled ? 'enabled' : 'disabled'} for signed-in citizens.`
+    : 'DeepSeek is not configured on the server.';
+  $('#admin-metrics').innerHTML = `<div><span>Calls today</span><strong>${formatNumber(status.calls)} / ${formatNumber(status.daily_global_limit)}</strong></div><div><span>Successful</span><strong>${formatNumber(status.succeeded)}</strong></div><div><span>Input tokens</span><strong>${formatNumber(status.prompt_tokens)}</strong></div><div><span>Output tokens</span><strong>${formatNumber(status.completion_tokens)}</strong></div>`;
 }
 
 function initMenu() {
@@ -214,7 +268,7 @@ function initLocationSuggestions() {
       if (query.length < 4) { list.innerHTML = ''; return; }
       debounceTimer = setTimeout(async () => {
         try {
-          const response = await fetch(`/api/location/suggest?query=${encodeURIComponent(query)}`);
+          const response = await apiFetch(`/api/location/suggest?query=${encodeURIComponent(query)}`);
           if (!response.ok) return;
           const data = await response.json();
           const seen = new Set();
@@ -247,7 +301,7 @@ function initHome() {
 
 async function loadBlockCount() {
   try {
-    const response = await fetch('/api/stats/national');
+    const response = await apiFetch('/api/stats/national');
     const data = await response.json();
     const target = $('#home-block-count');
     if (target) target.textContent = formatNumber(data.total_blocks);
@@ -311,7 +365,7 @@ async function loadPageContext(page, options) {
 
 async function fetchSearchContext(query) {
   if (!query) throw new Error('Enter a place to continue.');
-  const response = await fetch(`/api/local-context/search?query=${encodeURIComponent(query)}`);
+  const response = await apiFetch(`/api/local-context/search?query=${encodeURIComponent(query)}`);
   if (!response.ok) throw new Error('We could not find that place. Try a city, district, or state.');
   return response.json();
 }
@@ -322,7 +376,7 @@ function fetchGpsContext() {
     navigator.geolocation.getCurrentPosition(async (position) => {
       try {
         const { latitude, longitude } = position.coords;
-        const response = await fetch(`/api/local-context?lat=${latitude}&lng=${longitude}`);
+        const response = await apiFetch(`/api/local-context?lat=${latitude}&lng=${longitude}`);
         if (!response.ok) throw new Error('We could not build a local context from this location.');
         resolve(await response.json());
       } catch (error) { reject(error); }
@@ -406,7 +460,7 @@ function renderSafety(context) {
 
 async function getAssessment(location, audience) {
   const place = `${location.nearest_block}, ${location.detected_district}, ${location.detected_state}`;
-  const response = await fetch('/api/assessment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: place, audience }) });
+  const response = await apiFetch('/api/assessment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: place, audience }) });
   if (!response.ok) throw new Error('Groundwater assessment unavailable.');
   const data = await response.json();
   if (data.error) throw new Error(data.error);
@@ -414,7 +468,7 @@ async function getAssessment(location, audience) {
 }
 
 async function getCropAdvice(stateName) {
-  const response = await fetch('/api/suggestor/crops', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state_name: stateName }) });
+  const response = await apiFetch('/api/suggestor/crops', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state_name: stateName }) });
   if (!response.ok) throw new Error('Crop recommendations unavailable.');
   return response.json();
 }
@@ -464,7 +518,7 @@ function initRecharge() {
     if (!area) return;
     result.classList.add('is-loading');
     try {
-      const response = await fetch('/api/suggestor/rwh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rooftop_area_sqft: area, state_name: stateName }) });
+      const response = await apiFetch('/api/suggestor/rwh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rooftop_area_sqft: area, state_name: stateName }) });
       const data = await response.json();
       if (!response.ok) throw new Error('Recharge estimate unavailable.');
       result.innerHTML = `<p class="result-label">ESTIMATED ANNUAL CAPTURE</p><p class="result-number">${formatNumber(data.annual_harvestable_liters)} <span>L</span></p><p class="result-detail">from a ${formatNumber(area)} sq ft roof in ${escapeHTML(stateName)}</p><div class="result-stats"><div><span>Suggested storage</span><strong>${formatNumber(data.recommended_tank_capacity_liters)} L</strong></div><div><span>Family supply equivalent</span><strong>${formatNumber(data.equivalent_family_days)} days</strong></div></div>`;
@@ -505,7 +559,7 @@ function initChat() {
     submit.disabled = true;
     const thinking = appendThinking(messages);
     try {
-      const response = await fetch('/api/chat', {
+      const response = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -572,7 +626,7 @@ function setChatAuthState() {
 async function loadChatHistory() {
   if (!appState.user || !$('#chat-history-list')) return;
   try {
-    const response = await fetch('/api/conversations');
+    const response = await apiFetch('/api/conversations');
     if (!response.ok) return;
     const data = await response.json();
     const list = $('#chat-history-list');
@@ -596,7 +650,7 @@ async function openChatHistory() {
 }
 
 async function restoreConversation(conversationId) {
-  const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`);
+  const response = await apiFetch(`/api/conversations/${encodeURIComponent(conversationId)}`);
   const data = await response.json();
   if (!response.ok) return;
   const conversation = data.conversation;
@@ -612,7 +666,7 @@ async function restoreConversation(conversationId) {
 }
 
 async function removeConversation(conversationId) {
-  const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' });
+  const response = await apiFetch(`/api/conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' });
   if (!response.ok) return;
   if (appState.conversationId === conversationId) {
     appState.conversationId = null;
@@ -901,7 +955,7 @@ function renderWeatherVisuals(weather) {
 function renderFactsheetVisual(factsheet) {
   if (!factsheet?.pages?.length) return [];
   const firstPage = factsheet.pages[0];
-  return [`<section class="visual-card source-sheet-card" data-view="source" data-span="wide"><div class="source-sheet-header"><div><p class="visual-kicker">ORIGINAL CGWB FACT SHEET · 2025</p><h3>${escapeHTML(factsheet.state_name)}</h3><p>${escapeHTML(firstPage.label)}</p></div><div class="source-sheet-actions"><select class="source-page-select" aria-label="Choose fact sheet page">${factsheet.pages.map((page) => `<option value="${escapeHTML(page.image_url)}" data-label="${escapeHTML(page.label)}">Page ${page.number} · ${escapeHTML(page.label)}</option>`).join('')}</select><button class="source-expand" type="button">Open full sheet</button></div></div><div class="source-sheet-frame"><span class="source-loading">Loading official page…</span><img src="${escapeHTML(firstPage.image_url)}" alt="Page 1 of the ${escapeHTML(factsheet.state_name)} CGWB groundwater fact sheet" loading="lazy"></div></section>`];
+  return [`<section class="visual-card source-sheet-card" data-view="source" data-span="wide"><div class="source-sheet-header"><div><p class="visual-kicker">ORIGINAL CGWB FACT SHEET · 2025</p><h3>${escapeHTML(factsheet.state_name)}</h3><p>${escapeHTML(firstPage.label)}</p></div><div class="source-sheet-actions"><select class="source-page-select" aria-label="Choose fact sheet page">${factsheet.pages.map((page) => `<option value="${escapeHTML(resolveApiAsset(page.image_url))}" data-label="${escapeHTML(page.label)}">Page ${page.number} · ${escapeHTML(page.label)}</option>`).join('')}</select><button class="source-expand" type="button">Open full sheet</button></div></div><div class="source-sheet-frame"><span class="source-loading">Loading official page…</span><img src="${escapeHTML(resolveApiAsset(firstPage.image_url))}" alt="Page 1 of the ${escapeHTML(factsheet.state_name)} CGWB groundwater fact sheet" loading="lazy"></div></section>`];
 }
 
 function renderFallbackVisuals(payload) { return [visualCard('DATA VIEW', payload.title || 'Relevant evidence', '<p class="source-note">I.G.R.I.S. found supporting data, but this question does not yet have a specialised visual template.</p>')]; }

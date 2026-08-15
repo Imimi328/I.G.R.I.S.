@@ -33,7 +33,7 @@ INGRES Government Data & Reports
    │
    └──> I.G.R.I.S. Conversational Engine
           ├── Context-aware location resolver (GPS, locality, city, district, state)
-          ├── Local LLM with evidence-grounded deterministic fallback
+          ├── DeepSeek V4 Flash with an admin kill switch and grounded fallback
           ├── 128 visualization recipes across 12 evidence families
           ├── Live Open-Meteo weather and irrigation context
           └── Original CGWB fact-sheet evidence viewer
@@ -89,7 +89,7 @@ pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Open [http://localhost:8000](http://localhost:8000). Location search and weather require internet access. A local OpenAI-compatible model server is optional; the evidence-grounded fallback remains available without one.
+Open [http://localhost:8000](http://localhost:8000). Location search and weather require internet access. DeepSeek is optional; the evidence-grounded fallback remains available when it is unconfigured, disabled, over quota, or unavailable.
 
 ### Google sign-in
 
@@ -106,21 +106,32 @@ The Google Identity button used here validates an ID token, so the OAuth client 
 
 Generated chat is protected by an HTTP-only, SameSite session cookie. Public pages, local searches, weather, official groundwater evidence, and source sheets remain accessible without an account. Private conversations are stored in the ignored runtime database at `data/runtime/igris_accounts.db`.
 
-### Production domain: igris.site
+### Production topology
 
-Configure the deployed service with:
+Cloudflare Pages serves the static `frontend/` directory on `igris.site` and `www.igris.site`. The VPS serves only FastAPI on `api.igris.site`, with Uvicorn bound to loopback at `127.0.0.1:8010` behind Nginx. Configure the VPS with:
 
 ```env
 APP_ENV=production
 AUTH_COOKIE_SECURE=true
 ALLOWED_ORIGINS=https://igris.site,https://www.igris.site
+ALLOWED_HOSTS=api.igris.site
+SERVE_FRONTEND=false
+ADMIN_EMAILS=your-verified-admin@example.com
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-flash
+DeepSeek_Key=replace-on-the-server-only
+LLM_MAX_TOKENS=800
+LLM_DAILY_USER_LIMIT=20
+LLM_GLOBAL_DAILY_LIMIT=300
 ```
 
-Serve the application over HTTPS and redirect one hostname to the other so sessions stay on one canonical host. Keep `GOOGLE_CLIENT_ID`, `AUTH_SESSION_SECRET`, model credentials, and the account database on the server—not in frontend files or GitHub.
+The LLM starts disabled in the private runtime database. Only a Google-verified account listed in `ADMIN_EMAILS` can read or mutate `/api/admin/*`; all enforcement occurs server-side. Every signed-in citizen can chat, but disabled or exhausted paid generation falls back to the local grounded engine. Daily reservations are atomic across workers, and only a one-way hash of the Google subject is sent as DeepSeek's `user_id`.
+
+Keep `GOOGLE_CLIENT_ID`, `AUTH_SESSION_SECRET`, `DeepSeek_Key`, the account database, and any immutable admin subject IDs on the VPS—not in frontend files or GitHub. Put the environment at `/etc/igris/igris.env` with owner-only permissions. The reference systemd and Nginx units are in `deploy/` and intentionally use a dedicated unprivileged `igris` account without changing other applications on the server.
 
 ### Model upgrades
 
-Set `LLM_BASE_URL`, `LLM_MODEL`, and optionally `LLM_API_KEY` to move from the prototype’s local model to any larger OpenAI-compatible local or hosted model. Location resolution, structured evidence retrieval, account security, conversation history, and visual generation remain model-independent.
+`deepseek-v4-flash` runs with thinking disabled and an 800-token ceiling to control cost. The owner can later move complex workflows to `deepseek-v4-pro` by changing the server-only model setting; location resolution, structured evidence retrieval, account security, conversation history, and visual generation remain model-independent.
 
 ### Core APIs
 
@@ -146,14 +157,14 @@ The decision brief is an evidence-based screening tool, never a substitute for s
 
 **Department:** School of Computational Sciences | **Program:** B.Tech AI/ML (SY)
 
-| # | Member Name | Role | PRN | Profile / Contact |
-|:---:|:---|:---|:---:|:---|
-| 👑 | **Ritesh Verma** | **Team Leader** | `22558020284` | [emogi.in](http://emogi.in/) • [vritesh328@gmail.com](mailto:vritesh328@gmail.com) |
-| 🧑‍💻 | **Utkarsh Mishra** | AI/ML Developer | `22558020277` | [utkarsh13528@gmail.com](mailto:utkarsh13528@gmail.com) |
-| 👩‍💻 | **Stuti Priya** | AI/ML Developer | `22558020261` | [jhastuti827@gmail.com](mailto:jhastuti827@gmail.com) |
-| 🧑‍💻 | **Parth Wade** | Data & Fullstack | `22558020287` | [parthwade09@gmail.com](mailto:parthwade09@gmail.com) |
-| 👩‍💻 | **Swapnali Ubale** | AI/ML Developer | `22558020274` | [swapnaliubale16@gmail.com](mailto:swapnaliubale16@gmail.com) |
-| 🧑‍💻 | **Prince Gaur** | Backend & GIS | `22558020067` | [pgaur698@gmail.com](mailto:pgaur698@gmail.com) |
+| # | Member Name | Role |
+|:---:|:---|:---|
+| 👑 | **Ritesh Verma** | **Team Leader** |
+| 🧑‍💻 | **Utkarsh Mishra** | AI/ML Developer |
+| 👩‍💻 | **Stuti Priya** | AI/ML Developer |
+| 🧑‍💻 | **Parth Wade** | Data & Fullstack |
+| 👩‍💻 | **Swapnali Ubale** | AI/ML Developer |
+| 🧑‍💻 | **Prince Gaur** | Backend & GIS |
 
 ---
 

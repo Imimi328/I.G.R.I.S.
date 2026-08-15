@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import sqlite3
+import hashlib
 from typing import List, Dict, Any, Optional
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -10,10 +11,11 @@ import settings
 
 settings.load_project_env()
 
-from fastapi import FastAPI, Query, HTTPException, Response, Depends, Cookie
+from fastapi import FastAPI, Query, HTTPException, Response, Depends, Cookie, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import db_service
 import rag_service
@@ -22,30 +24,55 @@ import weather_service
 import visualization_service
 import auth_service
 
+APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8000,http://127.0.0.1:8000,https://igris.site,https://www.igris.site",
+).split(",") if origin.strip()]
+
 app = FastAPI(
     title="I.G.R.I.S. API Engine",
     description="Backend AI & Hydrological Data Service for INGRES Virtual Assistant",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url=None if APP_ENV == "production" else "/docs",
+    redoc_url=None if APP_ENV == "production" else "/redoc",
+    openapi_url=None if APP_ENV == "production" else "/openapi.json",
 )
 
-# Enable CORS for Vite frontend
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=[host.strip() for host in os.getenv(
+        "ALLOWED_HOSTS", "api.igris.site,localhost,127.0.0.1"
+    ).split(",") if host.strip()],
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in os.getenv(
-        "ALLOWED_ORIGINS",
-        "http://localhost:8000,http://127.0.0.1:8000,https://igris.site,https://www.igris.site",
-    ).split(",") if origin.strip()],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if APP_ENV == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if request.url.path.startswith(("/api/auth", "/api/admin", "/api/chat", "/api/conversations")):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 auth_service.initialize_accounts()
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=4000)
     conversation_id: Optional[str] = None
-    history: Optional[List[Dict[str, str]]] = []
+    history: List[Dict[str, str]] = Field(default_factory=list, max_length=20)
     language: Optional[str] = "en"
     current_location: Optional[Dict[str, Any]] = None
 
@@ -65,14 +92,30 @@ class AssessmentRequest(BaseModel):
 
 
 class GoogleCredentialRequest(BaseModel):
-    credential: str
+    credential: str = Field(min_length=20, max_length=8192)
+
+
+class LlmControlRequest(BaseModel):
+    enabled: bool
 
 
 def require_user(igris_session: Optional[str] = Cookie(default=None)) -> Dict[str, Any]:
     user = auth_service.verify_session(igris_session)
     if not user:
         raise HTTPException(status_code=401, detail="Sign in with Google to generate an I.G.R.I.S. answer.")
+    return auth_service.public_user(user)
+
+
+def require_admin(user: Dict[str, Any] = Depends(require_user)) -> Dict[str, Any]:
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Administrator access is required.")
     return user
+
+
+def require_trusted_browser(request: Request) -> None:
+    origin = request.headers.get("origin")
+    if APP_ENV == "production" and origin not in ALLOWED_ORIGINS:
+        raise HTTPException(status_code=403, detail="Untrusted request origin.")
 
 
 @app.get("/api/auth/config")
@@ -87,12 +130,37 @@ def sign_in_with_google(req: GoogleCredentialRequest, response: Response):
     except (ValueError, RuntimeError) as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
     response.set_cookie(value=auth_service.create_session(user), **auth_service.cookie_options())
-    return {"user": user}
+    return {"user": auth_service.public_user(user)}
 
 
 @app.get("/api/auth/me")
 def get_current_user(user: Dict[str, Any] = Depends(require_user)):
     return {"user": user}
+
+
+@app.get("/api/admin/status")
+def get_admin_status(admin: Dict[str, Any] = Depends(require_admin)):
+    return {
+        **auth_service.llm_status(),
+        "configured": bool(llm_service.LLM_API_KEY),
+        "model": llm_service.DEFAULT_MODEL,
+    }
+
+
+@app.put("/api/admin/llm")
+def update_llm_status(
+    req: LlmControlRequest,
+    admin: Dict[str, Any] = Depends(require_admin),
+    _: None = Depends(require_trusted_browser),
+):
+    if req.enabled and not llm_service.LLM_API_KEY:
+        raise HTTPException(status_code=409, detail="DeepSeek is not configured on the server.")
+    auth_service.set_llm_enabled(req.enabled, admin["sub"])
+    return {
+        **auth_service.llm_status(),
+        "configured": bool(llm_service.LLM_API_KEY),
+        "model": llm_service.DEFAULT_MODEL,
+    }
 
 
 @app.post("/api/auth/logout")
@@ -317,7 +385,8 @@ def health_check():
         "service": "I.G.R.I.S. Core Backend",
         "database": "ingres_master.db (Connected)",
         "total_blocks_indexed": nat.get("total_blocks", 6635),
-        "llm_provider": f"OpenAI-compatible gateway ({llm_service.DEFAULT_MODEL})"
+        "llm_provider": f"DeepSeek gateway ({llm_service.DEFAULT_MODEL})",
+        "llm_enabled": auth_service.get_llm_enabled(),
     }
 
 @app.get("/api/stats/national")
@@ -422,7 +491,11 @@ def suggest_locations(query: str = Query(..., min_length=3)):
     }
 
 @app.post("/api/chat")
-def process_chat(req: ChatRequest, user: Dict[str, Any] = Depends(require_user)):
+def process_chat(
+    req: ChatRequest,
+    user: Dict[str, Any] = Depends(require_user),
+    _: None = Depends(require_trusted_browser),
+):
     user_msg = req.message.strip()
     if not user_msg:
         raise HTTPException(status_code=400, detail="Enter a groundwater question.")
@@ -610,13 +683,23 @@ def process_chat(req: ChatRequest, user: Dict[str, Any] = Depends(require_user))
     if rag_snippets:
         context_payload["knowledge_snippets"] = rag_snippets
 
-    # 5. Call the configured OpenAI-compatible model gateway
+    # 5. Reserve spend atomically, then call DeepSeek only when the owner has enabled it.
+    llm_claim = auth_service.claim_llm_call(user["sub"], llm_service.DEFAULT_MODEL)
+    pseudonymous_user_id = hashlib.sha256(user["sub"].encode("utf-8")).hexdigest()[:32]
     llm_result = llm_service.generate_llm_response(
         user_message=user_msg,
         context_data=context_payload,
         conversation_history=persisted_history or req.history,
-        language=req.language
+        language=req.language,
+        enable_model=llm_claim["allowed"],
+        user_id=pseudonymous_user_id,
     )
+    if llm_claim.get("usage_id"):
+        auth_service.finish_llm_call(
+            llm_claim["usage_id"],
+            llm_result.get("usage"),
+            llm_result.get("model_used", False),
+        )
 
     auth_service.save_exchange(
         user_sub=user["sub"],
@@ -633,7 +716,9 @@ def process_chat(req: ChatRequest, user: Dict[str, Any] = Depends(require_user))
         "source": llm_result["source"],
         "visualization": visualization_payload,
         "context_used": bool(context_payload),
-        "location_resolution": context_payload.get("location_resolution")
+        "location_resolution": context_payload.get("location_resolution"),
+        "generation_mode": "deepseek" if llm_result.get("model_used") else "grounded_fallback",
+        "llm_availability": llm_claim.get("reason"),
     }
 
 # ----------------- SMART SUGGESTOR ENDPOINTS -----------------
@@ -769,9 +854,10 @@ def resolve_gps_location(lat: float = Query(18.5204), lng: float = Query(73.8567
 
 
 
-# Mount vanilla HTML/CSS/JS frontend directly at root
+# Mount the frontend only for local development. Production serves API-only.
 frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
-if os.path.exists(frontend_dir):
+serve_frontend = os.getenv("SERVE_FRONTEND", "true" if APP_ENV != "production" else "false").lower() == "true"
+if serve_frontend and os.path.exists(frontend_dir):
     app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 
 if __name__ == "__main__":

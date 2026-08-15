@@ -15,8 +15,22 @@ GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or os.getenv("Client_ID") or "
 SESSION_TTL_SECONDS = int(os.getenv("AUTH_SESSION_TTL_SECONDS", "604800"))
 SESSION_SECRET = os.getenv("AUTH_SESSION_SECRET", "").strip() or secrets.token_urlsafe(48)
 APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+if APP_ENV == "production" and not os.getenv("AUTH_SESSION_SECRET", "").strip():
+    raise RuntimeError("AUTH_SESSION_SECRET is required in production.")
 COOKIE_SECURE_SETTING = os.getenv("AUTH_COOKIE_SECURE")
 COOKIE_SECURE = APP_ENV == "production" if COOKIE_SECURE_SETTING is None else COOKIE_SECURE_SETTING.lower() == "true"
+ADMIN_EMAILS = {
+    email.strip().lower()
+    for email in os.getenv("ADMIN_EMAILS", "").split(",")
+    if email.strip()
+}
+ADMIN_GOOGLE_SUBS = {
+    subject.strip()
+    for subject in os.getenv("ADMIN_GOOGLE_SUBS", "").split(",")
+    if subject.strip()
+}
+LLM_DAILY_USER_LIMIT = max(0, int(os.getenv("LLM_DAILY_USER_LIMIT", "20")))
+LLM_GLOBAL_DAILY_LIMIT = max(0, int(os.getenv("LLM_GLOBAL_DAILY_LIMIT", "300")))
 ACCOUNT_DB = Path(os.getenv(
     "AUTH_DATABASE_PATH",
     str(Path(__file__).resolve().parent.parent / "data" / "runtime" / "igris_accounts.db"),
@@ -66,6 +80,37 @@ def initialize_accounts() -> None:
         )
         connection.execute("CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_sub, updated_at DESC)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, id)")
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS system_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_by TEXT,
+                updated_at INTEGER NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS llm_usage (
+                id TEXT PRIMARY KEY,
+                user_sub TEXT NOT NULL,
+                usage_day TEXT NOT NULL,
+                model TEXT NOT NULL,
+                prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                cached_tokens INTEGER NOT NULL DEFAULT 0,
+                succeeded INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (user_sub) REFERENCES users(google_sub) ON DELETE CASCADE
+            )
+            """
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_llm_usage_day ON llm_usage(usage_day, user_sub)")
+        connection.execute(
+            "INSERT OR IGNORE INTO system_settings (key, value, updated_by, updated_at) VALUES ('llm_enabled', 'false', NULL, ?)",
+            (int(time.time()),),
+        )
 
 
 def public_config() -> Dict[str, Any]:
@@ -73,6 +118,119 @@ def public_config() -> Dict[str, Any]:
         "google_enabled": bool(GOOGLE_CLIENT_ID),
         "google_client_id": GOOGLE_CLIENT_ID,
         "generation_requires_sign_in": True,
+    }
+
+
+def is_admin(user: Dict[str, Any]) -> bool:
+    email_matches = str(user.get("email", "")).strip().lower() in ADMIN_EMAILS
+    if not email_matches:
+        return False
+    return not ADMIN_GOOGLE_SUBS or str(user.get("sub", "")) in ADMIN_GOOGLE_SUBS
+
+
+def public_user(user: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "sub": user.get("sub"),
+        "email": user.get("email"),
+        "name": user.get("name"),
+        "picture": user.get("picture", ""),
+        "is_admin": is_admin(user),
+    }
+
+
+def get_llm_enabled() -> bool:
+    with _account_connection() as connection:
+        row = connection.execute(
+            "SELECT value FROM system_settings WHERE key = 'llm_enabled'"
+        ).fetchone()
+    return bool(row and row["value"].lower() == "true")
+
+
+def set_llm_enabled(enabled: bool, admin_sub: str) -> bool:
+    with _account_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO system_settings (key, value, updated_by, updated_at)
+            VALUES ('llm_enabled', ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_by = excluded.updated_by,
+                updated_at = excluded.updated_at
+            """,
+            ("true" if enabled else "false", admin_sub, int(time.time())),
+        )
+    return enabled
+
+
+def claim_llm_call(user_sub: str, model: str) -> Dict[str, Any]:
+    if not get_llm_enabled():
+        return {"allowed": False, "reason": "disabled"}
+
+    usage_day = time.strftime("%Y-%m-%d", time.gmtime())
+    usage_id = uuid.uuid4().hex
+    with _account_connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        user_calls = connection.execute(
+            "SELECT COUNT(*) FROM llm_usage WHERE usage_day = ? AND user_sub = ?",
+            (usage_day, user_sub),
+        ).fetchone()[0]
+        global_calls = connection.execute(
+            "SELECT COUNT(*) FROM llm_usage WHERE usage_day = ?",
+            (usage_day,),
+        ).fetchone()[0]
+        if user_calls >= LLM_DAILY_USER_LIMIT:
+            return {"allowed": False, "reason": "user_limit"}
+        if global_calls >= LLM_GLOBAL_DAILY_LIMIT:
+            return {"allowed": False, "reason": "global_limit"}
+        connection.execute(
+            "INSERT INTO llm_usage (id, user_sub, usage_day, model, created_at) VALUES (?, ?, ?, ?, ?)",
+            (usage_id, user_sub, usage_day, model, int(time.time())),
+        )
+    return {"allowed": True, "usage_id": usage_id, "reason": "enabled"}
+
+
+def finish_llm_call(usage_id: str, usage: Optional[Dict[str, Any]], succeeded: bool) -> None:
+    usage = usage or {}
+    with _account_connection() as connection:
+        connection.execute(
+            """
+            UPDATE llm_usage SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, succeeded = ?
+            WHERE id = ?
+            """,
+            (
+                int(usage.get("prompt_tokens") or 0),
+                int(usage.get("completion_tokens") or 0),
+                int(usage.get("prompt_cache_hit_tokens") or 0),
+                1 if succeeded else 0,
+                usage_id,
+            ),
+        )
+
+
+def llm_status() -> Dict[str, Any]:
+    usage_day = time.strftime("%Y-%m-%d", time.gmtime())
+    with _account_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS calls,
+                   COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                   COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+                   COALESCE(SUM(cached_tokens), 0) AS cached_tokens,
+                   COALESCE(SUM(succeeded), 0) AS succeeded
+            FROM llm_usage WHERE usage_day = ?
+            """,
+            (usage_day,),
+        ).fetchone()
+    return {
+        "enabled": get_llm_enabled(),
+        "usage_day_utc": usage_day,
+        "calls": row["calls"],
+        "succeeded": row["succeeded"],
+        "prompt_tokens": row["prompt_tokens"],
+        "completion_tokens": row["completion_tokens"],
+        "cached_tokens": row["cached_tokens"],
+        "daily_user_limit": LLM_DAILY_USER_LIMIT,
+        "daily_global_limit": LLM_GLOBAL_DAILY_LIMIT,
     }
 
 

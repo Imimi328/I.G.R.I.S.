@@ -4,11 +4,12 @@ import os
 import re
 from typing import Dict, Any, List, Optional
 
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:1234/v1").rstrip("/")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
 LLM_URL = f"{LLM_BASE_URL}/chat/completions"
-DEFAULT_MODEL = os.getenv("LLM_MODEL", "gemma-4-e2b-it")
-LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
+DEFAULT_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")
+LLM_API_KEY = (os.getenv("DeepSeek_Key") or os.getenv("DEEPSEEK_API_KEY") or os.getenv("LLM_API_KEY") or "").strip()
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
+LLM_MAX_TOKENS = min(1200, max(256, int(os.getenv("LLM_MAX_TOKENS", "800"))))
 
 LANGUAGE_NAMES = {
     "en": "English",
@@ -40,7 +41,9 @@ def generate_llm_response(
     user_message: str, 
     context_data: Optional[Dict[str, Any]] = None,
     conversation_history: Optional[List[Dict[str, str]]] = None,
-    language: str = "en"
+    language: str = "en",
+    enable_model: bool = True,
+    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     
     language_code = language if language in LANGUAGE_NAMES else "en"
@@ -144,12 +147,23 @@ CONTENT & TONE RULES:
             
     messages.append({"role": "user", "content": user_prompt})
 
+    if not enable_model or not LLM_API_KEY:
+        return {
+            "text": generate_deterministic_fallback(user_message, context_data, is_hindi),
+            "source": "IGRIS Grounded Hydro-Engine",
+            "model_used": False,
+            "usage": {},
+        }
+
     payload = {
         "model": DEFAULT_MODEL,
         "messages": messages,
         "temperature": 0.15,
-        "max_tokens": 1400
+        "max_tokens": LLM_MAX_TOKENS,
+        "thinking": {"type": "disabled"},
     }
+    if user_id:
+        payload["user_id"] = user_id
 
     try:
         headers = {"Content-Type": "application/json"}
@@ -161,14 +175,18 @@ CONTENT & TONE RULES:
             reply = data["choices"][0]["message"]["content"].strip()
             return {
                 "text": reply,
-                "source": f"OpenAI-compatible model ({DEFAULT_MODEL})"
+                "source": f"DeepSeek ({DEFAULT_MODEL})",
+                "model_used": True,
+                "usage": data.get("usage") or {},
             }
-    except Exception as e:
-        print(f"[Warning] LMStudio call failed: {e}. Using deterministic fallback.")
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        pass
 
     return {
         "text": generate_deterministic_fallback(user_message, context_data, is_hindi),
-        "source": "IGRIS Grounded Hydro-Engine"
+        "source": "IGRIS Grounded Hydro-Engine",
+        "model_used": False,
+        "usage": {},
     }
 
 def generate_deterministic_fallback(user_message: str, context: Optional[Dict[str, Any]], is_hindi: bool = False) -> str:
