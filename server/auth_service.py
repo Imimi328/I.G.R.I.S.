@@ -14,7 +14,9 @@ from typing import Any, Dict, Optional
 GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or os.getenv("Client_ID") or "").strip()
 SESSION_TTL_SECONDS = int(os.getenv("AUTH_SESSION_TTL_SECONDS", "604800"))
 SESSION_SECRET = os.getenv("AUTH_SESSION_SECRET", "").strip() or secrets.token_urlsafe(48)
-COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
+APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+COOKIE_SECURE_SETTING = os.getenv("AUTH_COOKIE_SECURE")
+COOKIE_SECURE = APP_ENV == "production" if COOKIE_SECURE_SETTING is None else COOKIE_SECURE_SETTING.lower() == "true"
 ACCOUNT_DB = Path(os.getenv(
     "AUTH_DATABASE_PATH",
     str(Path(__file__).resolve().parent.parent / "data" / "runtime" / "igris_accounts.db"),

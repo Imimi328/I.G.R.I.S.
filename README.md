@@ -94,11 +94,29 @@ Open [http://localhost:8000](http://localhost:8000). Location search and weather
 ### Google sign-in
 
 1. Create an OAuth 2.0 **Web application** in Google Cloud Console.
-2. Add `http://localhost:8000` and `http://127.0.0.1:8000` as authorised JavaScript origins.
+2. Add these exact entries under **Authorised JavaScript origins**—without trailing slashes:
+   - `http://localhost:8000`
+   - `http://127.0.0.1:8000`
+   - `https://igris.site`
+   - `https://www.igris.site`
 3. Copy `.env.example` to `.env`, set `GOOGLE_CLIENT_ID`, and generate a long random `AUTH_SESSION_SECRET`.
 4. Keep `.env` private. The browser receives only the public client ID; Google credentials are verified server-side and I.G.R.I.S. stores no Google password.
 
+The Google Identity button used here validates an ID token, so the OAuth client secret is never sent to or used by the browser. The screenshot error `no registered origin` is fixed in Google Cloud Console by adding the current origin to the list above; changing application code or the client secret cannot register that origin.
+
 Generated chat is protected by an HTTP-only, SameSite session cookie. Public pages, local searches, weather, official groundwater evidence, and source sheets remain accessible without an account. Private conversations are stored in the ignored runtime database at `data/runtime/igris_accounts.db`.
+
+### Production domain: igris.site
+
+Configure the deployed service with:
+
+```env
+APP_ENV=production
+AUTH_COOKIE_SECURE=true
+ALLOWED_ORIGINS=https://igris.site,https://www.igris.site
+```
+
+Serve the application over HTTPS and redirect one hostname to the other so sessions stay on one canonical host. Keep `GOOGLE_CLIENT_ID`, `AUTH_SESSION_SECRET`, model credentials, and the account database on the server—not in frontend files or GitHub.
 
 ### Model upgrades
 
