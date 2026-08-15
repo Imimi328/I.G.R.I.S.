@@ -27,8 +27,17 @@ const CHAT_LANGUAGES = [
 ];
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (!document.querySelector('link[rel="icon"]')) {
+    const favicon = document.createElement('link');
+    favicon.rel = 'icon';
+    favicon.type = 'image/png';
+    favicon.href = '/igris-logo.png';
+    document.head.append(favicon);
+  }
   document.querySelectorAll('.brand > span:last-child').forEach((brandText) => { brandText.innerHTML = 'I.G.R.I.S. <small>for INGRES</small>'; });
-  document.querySelectorAll('.brand-mark').forEach((brandMark) => { brandMark.textContent = 'I'; });
+  document.querySelectorAll('.brand-mark').forEach((brandMark) => {
+    brandMark.innerHTML = '<img src="/igris-logo.png" alt="" aria-hidden="true">';
+  });
   initMenu();
   initChatNavigation();
   appState.authReady = initAuth();
