@@ -61,6 +61,27 @@ INGRES Government Data & Reports
 
 ---
 
-## 👥 Team
-- **Project:** SIH 2026 - Problem Statement SIH25066
+## 👥 Team Emogi (JSPM University, Pune)
+
+**Department:** School of Computational Sciences | **Program:** B.Tech AI/ML (SY)
+
+| # | Member Name | Role | PRN | Profile / Contact |
+|:---:|:---|:---|:---:|:---|
+| 👑 | **Ritesh Verma** | **Team Leader** | `22558020284` | [emogi.in](http://emogi.in/) • [vritesh328@gmail.com](mailto:vritesh328@gmail.com) |
+| 🧑‍💻 | **Utkarsh Mishra** | AI/ML Developer | `22558020277` | [utkarsh13528@gmail.com](mailto:utkarsh13528@gmail.com) |
+| 👩‍💻 | **Stuti Priya** | AI/ML Developer | `22558020261` | [jhastuti827@gmail.com](mailto:jhastuti827@gmail.com) |
+| 🧑‍💻 | **Parth Wade** | Data & Fullstack | `22558020287` | [parthwade09@gmail.com](mailto:parthwade09@gmail.com) |
+| 👩‍💻 | **Swapnali Ubale** | AI/ML Developer | `22558020274` | [swapnaliubale16@gmail.com](mailto:swapnaliubale16@gmail.com) |
+| 🧑‍💻 | **Prince Gaur** | Backend & GIS | `22558020067` | [pgaur698@gmail.com](mailto:pgaur698@gmail.com) |
+
+---
+
+## 📜 Problem Statement Details
+- **Competition:** Smart India Hackathon (SIH) 2026
+- **Problem Statement ID:** `SIH25066`
+- **Title:** Development of an AI-driven ChatBOT for INGRES as a virtual assistant
+- **Ministry / Organization:** Ministry of Jal Shakti / Central Ground Water Board (CGWB)
+- **Theme:** Smart Automation
+- **Category:** Software
 - **Repository:** [https://github.com/Imimi328/I.G.R.I.S.](https://github.com/Imimi328/I.G.R.I.S.)
+
