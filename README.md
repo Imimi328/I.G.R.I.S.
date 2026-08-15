@@ -108,7 +108,7 @@ Generated chat is protected by an HTTP-only, SameSite session cookie. Public pag
 
 ### Production topology
 
-Cloudflare Pages serves the static `frontend/` directory on `igris.site` and `www.igris.site`. The VPS serves only FastAPI on `api.igris.site`, with Uvicorn bound to loopback at `127.0.0.1:8010` behind Nginx. Configure the VPS with:
+Cloudflare Pages serves the static `frontend/` directory on `igris.site` and `www.igris.site`. A dedicated Cloudflare Worker handles `igris.site/api/*`, adds a private gateway credential, and forwards requests to the VPS. FastAPI rejects direct requests that do not carry that credential. Uvicorn remains bound to loopback at `127.0.0.1:8010` behind Nginx. Configure the VPS with:
 
 ```env
 APP_ENV=production
@@ -116,6 +116,8 @@ AUTH_COOKIE_SECURE=true
 ALLOWED_ORIGINS=https://igris.site,https://www.igris.site
 ALLOWED_HOSTS=api.igris.site
 SERVE_FRONTEND=false
+GATEWAY_SHARED_SECRET=replace-with-the-worker-secret
+GATEWAY_ENFORCEMENT=true
 ADMIN_EMAILS=your-verified-admin@example.com
 LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-flash
@@ -127,7 +129,7 @@ LLM_GLOBAL_DAILY_LIMIT=300
 
 The LLM starts disabled in the private runtime database. Only a Google-verified account listed in `ADMIN_EMAILS` can read or mutate `/api/admin/*`; all enforcement occurs server-side. Every signed-in citizen can chat, but disabled or exhausted paid generation falls back to the local grounded engine. Daily reservations are atomic across workers, and only a one-way hash of the Google subject is sent as DeepSeek's `user_id`.
 
-Keep `GOOGLE_CLIENT_ID`, `AUTH_SESSION_SECRET`, `DeepSeek_Key`, the account database, and any immutable admin subject IDs on the VPS—not in frontend files or GitHub. Put the environment at `/etc/igris/igris.env` with owner-only permissions. The reference systemd and Nginx units are in `deploy/` and intentionally use a dedicated unprivileged `igris` account without changing other applications on the server.
+Keep `GOOGLE_CLIENT_ID`, `AUTH_SESSION_SECRET`, `DeepSeek_Key`, `GATEWAY_SHARED_SECRET`, the account database, and any immutable admin subject IDs on the VPS—not in frontend files or GitHub. Store the matching gateway value as the Worker's encrypted `IGRIS_GATEWAY_KEY` secret. Put the VPS environment at `/etc/igris/igris.env` with owner-only permissions. The reference systemd and Nginx units are in `deploy/` and intentionally use a dedicated unprivileged `igris` account without changing other applications on the server. Follow the staged activation procedure in `edge-gateway/README.md` to avoid downtime.
 
 ### Model upgrades
 

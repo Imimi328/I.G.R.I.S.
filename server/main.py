@@ -23,8 +23,14 @@ import llm_service
 import weather_service
 import visualization_service
 import auth_service
+import gateway_security
 
 APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+GATEWAY_SHARED_SECRET = os.getenv("GATEWAY_SHARED_SECRET", "").strip()
+GATEWAY_ENFORCEMENT = gateway_security.gateway_enforcement_enabled(
+    APP_ENV,
+    os.getenv("GATEWAY_ENFORCEMENT"),
+)
 ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv(
     "ALLOWED_ORIGINS",
     "http://localhost:8000,http://127.0.0.1:8000,https://igris.site,https://www.igris.site",
@@ -56,6 +62,22 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    if (
+        GATEWAY_ENFORCEMENT
+        and request.url.path.startswith("/api/")
+        and not gateway_security.valid_gateway_request(request.headers, GATEWAY_SHARED_SECRET)
+    ):
+        return Response(
+            content='{"detail":"API access denied."}',
+            status_code=403,
+            media_type="application/json",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "DENY",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"

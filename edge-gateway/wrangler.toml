@@ -1,0 +1,12 @@
+name = "igris-api-gateway"
+main = "worker.js"
+compatibility_date = "2026-08-15"
+workers_dev = false
+
+[[routes]]
+pattern = "igris.site/api/*"
+zone_name = "igris.site"
+
+[[routes]]
+pattern = "www.igris.site/api/*"
+zone_name = "igris.site"
