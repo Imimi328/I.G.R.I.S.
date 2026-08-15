@@ -480,13 +480,22 @@ def get_groundwater_assessment(req: AssessmentRequest):
 @app.get("/api/local-context")
 def get_local_context(lat: float = Query(...), lng: float = Query(...)):
     """Combines browser GPS with live weather and the nearest official groundwater assessment unit."""
-    location = db_service.resolve_location_from_coords(lat, lng)
+    reverse_location = weather_service.get_location_from_coordinates(lat, lng)
+    if reverse_location:
+        query = reverse_location.get("city") or reverse_location.get("district") or reverse_location.get("state") or ""
+        location = db_service.resolve_location_from_search(lat, lng, reverse_location, query=query)
+        location["match_method"] = f"GPS reverse geocoding · {location.get('match_method', 'official assessment matching')}"
+    else:
+        location = db_service.resolve_location_from_coords(lat, lng)
+        location["match_method"] = "Approximate district fallback because reverse geocoding was unavailable"
     return {
         "coordinates": {"lat": lat, "lng": lng},
         "location": location,
         "weather": weather_service.get_live_weather(lat, lng),
+        "gps_resolution": reverse_location,
         "sources": [
             "Browser geolocation (with user permission)",
+            "OpenStreetMap Nominatim reverse geocoding" if reverse_location else "Approximate district centroid fallback",
             "CGWB Ground Water Resource Assessment 2025",
             "Open-Meteo forecast and FAO-56 reference evapotranspiration"
         ]
@@ -914,11 +923,19 @@ def get_factsheet_page(state_name: str, page_number: int):
         )
 
 @app.get("/api/location/resolve")
-def resolve_gps_location(lat: float = Query(18.5204), lng: float = Query(73.8567)):
+def resolve_gps_location(lat: float = Query(...), lng: float = Query(...)):
     """
     Resolves client GPS coordinates to nearest Indian District, Block, Aquifer status, and Borewell rules.
     """
-    return db_service.resolve_location_from_coords(lat, lng)
+    reverse_location = weather_service.get_location_from_coordinates(lat, lng)
+    if reverse_location:
+        query = reverse_location.get("city") or reverse_location.get("district") or reverse_location.get("state") or ""
+        location = db_service.resolve_location_from_search(lat, lng, reverse_location, query=query)
+        location["match_method"] = f"GPS reverse geocoding · {location.get('match_method', 'official assessment matching')}"
+        return location
+    location = db_service.resolve_location_from_coords(lat, lng)
+    location["match_method"] = "Approximate district fallback because reverse geocoding was unavailable"
+    return location
 
 
 

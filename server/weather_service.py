@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional
 
 WEATHER_CACHE: Dict[str, Any] = {}
 LOCATION_CACHE: Dict[str, Any] = {}
+REVERSE_LOCATION_CACHE: Dict[str, Any] = {}
 LAST_NOMINATIM_REQUEST_AT = 0.0
 
 def get_current_agro_season() -> Dict[str, str]:
@@ -196,6 +197,56 @@ def get_location_from_nominatim(query: str) -> Optional[Dict[str, Any]]:
                 return results
     except Exception as e:
         print(f"[Warning] Nominatim search failed: {e}")
+        return None
+
+
+def get_location_from_coordinates(lat: float, lng: float) -> Optional[Dict[str, Any]]:
+    cache_key = f"{round(lat, 4)}_{round(lng, 4)}"
+    cached = REVERSE_LOCATION_CACHE.get(cache_key)
+    if cached and (datetime.datetime.now() - cached[0]).total_seconds() < 86400:
+        return cached[1]
+
+    global LAST_NOMINATIM_REQUEST_AT
+    remaining_wait = 1 - (time.monotonic() - LAST_NOMINATIM_REQUEST_AT)
+    if remaining_wait > 0:
+        time.sleep(remaining_wait)
+
+    url = (
+        "https://nominatim.openstreetmap.org/reverse"
+        f"?format=jsonv2&lat={lat}&lon={lng}&addressdetails=1&zoom=14"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "IGRIS-SIH2026-Groundwater-Assistant/1.0"})
+        with urllib.request.urlopen(req, timeout=6) as response:
+            LAST_NOMINATIM_REQUEST_AT = time.monotonic()
+            item = json.loads(response.read().decode("utf-8"))
+        address = item.get("address", {})
+        country_code = str(address.get("country_code") or "").lower()
+        if country_code and country_code != "in":
+            return None
+        city = next(
+            (address.get(key) for key in ("village", "town", "city", "municipality", "suburb", "city_district") if address.get(key)),
+            "",
+        )
+        district = next(
+            (address.get(key) for key in ("state_district", "district", "county", "city_district", "city") if address.get(key)),
+            "",
+        )
+        result = {
+            "display_name": item.get("display_name"),
+            "lat": float(item.get("lat", lat)),
+            "lng": float(item.get("lon", lng)),
+            "state": address.get("state", ""),
+            "district": district,
+            "city": city,
+            "type": item.get("type", "location"),
+        }
+        if not result["state"]:
+            return None
+        REVERSE_LOCATION_CACHE[cache_key] = (datetime.datetime.now(), result)
+        return result
+    except Exception as error:
+        print(f"[Warning] Nominatim reverse lookup failed: {error}")
         return None
 
 
