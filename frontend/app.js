@@ -10,7 +10,7 @@ const appState = {
 const $ = (selector) => document.querySelector(selector);
 const escapeHTML = (value = '') => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 const formatNumber = (value) => Number(value || 0).toLocaleString('en-IN');
-const API_BASE_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname) ? '' : 'https://api.igris.site';
+const API_BASE_URL = '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
 const apiFetch = (path, options = {}) => fetch(apiUrl(path), { ...options, credentials: 'include' });
 const resolveApiAsset = (url) => String(url || '').startsWith('/api/') ? apiUrl(url) : url;
