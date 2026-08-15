@@ -299,6 +299,14 @@ def get_depth_trends(state: str = ""):
     """
     return db_service.get_all_depth_trends(state=state)
 
+@app.get("/api/location/resolve")
+def resolve_gps_location(lat: float = Query(18.5204), lng: float = Query(73.8567)):
+    """
+    Resolves client GPS coordinates to nearest Indian District, Block, Aquifer status, and Borewell rules.
+    """
+    return db_service.resolve_location_from_coords(lat, lng)
+
+
 
 # Mount vanilla HTML/CSS/JS frontend directly at root
 frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
