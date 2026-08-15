@@ -45,6 +45,11 @@ INGRES Government Data & Reports
 │   │   ├── ingres_master.db                  # Unified SQLite Master Database (6,635 blocks)
 │   │   ├── state_factsheets_corpus.json      # Semantic RAG Knowledge Corpus (36 states)
 │   │   └── india_all_blocks_categorization_2025.csv # 6,635 Block Records
+│   ├── raw/
+│   │   ├── cgwb_official/                    # Official CGWB GWRA block categorization PDFs
+│   │   ├── state_fact_sheets_2025/           # 36 Official State & UT Fact Sheet PDFs (2025)
+│   │   ├── opencity_gw_2024/                 # State & City Ground Water CSV datasets
+│   │   └── CGWB_Dynamic_GW_Resources_India_2025.pdf # National Ground Water Assessment Report
 │   ├── build_master_database.py              # Master data ingestion pipeline
 │   └── generate_pdf_guide.py                 # PDF documentation generator
 ├── SIH2026_INGRES_AI_Assistant_Complete_Guide.pdf # Complete Project Guide for NotebookLM

@@ -21,7 +21,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# IDE, OS & Agent Internal Working Directory
+# IDE, OS & Internal Local AI Workspace
 .vscode/
 .idea/
 .DS_Store
@@ -30,17 +30,8 @@ Thumbs.db
 *.log
 agent/
 
-# Raw Datasets & Bulky PDF Downloads (Reproducible via scripts)
-data/raw/
+# Temp html dumps
 *.html
 
 # Internal Notice / Private Docs
 1st Notice-Participation in the SIH-2026.pdf
-
-# Temporary Inspection / Probe Scripts
-data/inspect_*.py
-data/test_*.py
-data/probe_*.py
-data/parse_opencity.py
-data/parse_blockwise_2025.py
-data/download_*.py
