@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -15,6 +15,7 @@ import db_service
 import rag_service
 import llm_service
 import weather_service
+import visualization_service
 
 app = FastAPI(
     title="I.G.R.I.S. API Engine",
@@ -36,6 +37,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = "default"
     history: Optional[List[Dict[str, str]]] = []
     language: Optional[str] = "en"
+    current_location: Optional[Dict[str, Any]] = None
 
 class RWHRequest(BaseModel):
     rooftop_area_sqft: float
@@ -74,6 +76,76 @@ def extract_state_from_text(text: str) -> Optional[str]:
     if "ap" in re.findall(r'\b\w+\b', text_lower): return "Andhra Pradesh"
     if "tn" in re.findall(r'\b\w+\b', text_lower): return "Tamil Nadu"
     return None
+
+
+CURRENT_LOCATION_PHRASES = (
+    "my area", "my location", "current location", "where i am", "where i live",
+    "around me", "near me", "nearby", "here", "my village", "my district",
+    "my city", "my farm", "under my feet"
+)
+
+
+def refers_to_current_location(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.lower()).strip()
+    return any(phrase in normalized for phrase in CURRENT_LOCATION_PHRASES)
+
+
+def extract_explicit_location_query(text: str) -> Optional[str]:
+    """Extract a location only when the user actually names one.
+
+    Sending an entire question to a geocoder can turn ordinary words into an
+    unrelated Indian place. This keeps implicit questions tied to GPS context.
+    """
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if refers_to_current_location(normalized):
+        return None
+
+    detected_state = extract_state_from_text(normalized)
+    if detected_state:
+        return detected_state
+
+    named_unit = db_service.find_named_location_in_text(normalized)
+    if named_unit:
+        return ", ".join(filter(None, [named_unit.get("matched_name"), named_unit.get("state_name")]))
+
+    preposition_match = re.search(
+        r"\b(?:in|at|near|around|for|from)\s+([A-Za-z][A-Za-z .'-]{1,70})",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if preposition_match:
+        candidate = preposition_match.group(1)
+        candidate = re.split(
+            r"\b(?:and|this week|today|tomorrow|right now|should|can|would|with|because)\b",
+            candidate,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+        candidate = candidate.strip(" ?.,!-")
+        if 2 <= len(candidate) <= 70:
+            return candidate
+
+    words = re.findall(r"[A-Za-z][A-Za-z.'-]*", normalized)
+    question_words = {"what", "why", "how", "can", "should", "is", "are", "do", "does", "tell", "show", "give"}
+    if 1 <= len(words) <= 4 and not any(word.lower() in question_words for word in words):
+        return normalized.strip(" ?.,!")
+    return None
+
+
+def get_factsheet_visual_reference(state_name: str) -> Optional[Dict[str, Any]]:
+    reference = db_service.get_state_factsheet_reference(state_name)
+    if not reference:
+        return None
+    encoded_state = reference["state_name"].replace(" ", "%20")
+    return {
+        "state_name": reference["state_name"],
+        "source_file": reference["file_name"],
+        "pages": [
+            {"number": 1, "label": "Quality and state category map", "image_url": f"/api/factsheets/{encoded_state}/pages/1.png"},
+            {"number": 2, "label": "Resources, history and recommendations", "image_url": f"/api/factsheets/{encoded_state}/pages/2.png"},
+            {"number": 3, "label": "Depth and decadal fluctuation maps", "image_url": f"/api/factsheets/{encoded_state}/pages/3.png"},
+        ],
+    }
 
 def build_groundwater_assessment(block: Dict[str, Any], state_data: Optional[Dict[str, Any]], audience: str) -> Dict[str, Any]:
     """Convert a classified assessment unit into an auditable, plain-language decision brief."""
@@ -222,17 +294,82 @@ def get_groundwater_assessment(req: AssessmentRequest):
     state_data = db_service.get_state_detail(block["state_name"])
     return build_groundwater_assessment(block, state_data, req.audience)
 
+@app.get("/api/local-context")
+def get_local_context(lat: float = Query(...), lng: float = Query(...)):
+    """Combines browser GPS with live weather and the nearest official groundwater assessment unit."""
+    location = db_service.resolve_location_from_coords(lat, lng)
+    return {
+        "coordinates": {"lat": lat, "lng": lng},
+        "location": location,
+        "weather": weather_service.get_live_weather(lat, lng),
+        "sources": [
+            "Browser geolocation (with user permission)",
+            "CGWB Ground Water Resource Assessment 2025",
+            "Open-Meteo forecast and FAO-56 reference evapotranspiration"
+        ]
+    }
+
+@app.get("/api/local-context/search")
+def search_local_context(query: str = Query(..., min_length=2)):
+    """Resolves a typed Indian location, then returns the same local context as GPS."""
+    search_result = weather_service.search_location_resilient(query)
+    results = search_result["results"]
+    if not results:
+        return {"error": "Location not found. Try a city, district, block, and state."}
+
+    best_match = results[0]
+    location = db_service.resolve_location_from_search(best_match["lat"], best_match["lng"], best_match, query=query)
+    location["selected_locality"] = query.strip()
+    if search_result["fallback_used"]:
+        location["match_method"] = f"Nearby OpenStreetMap match via {search_result['matched_query']} · {location['match_method']}"
+    context = {
+        "coordinates": {"lat": best_match["lat"], "lng": best_match["lng"]},
+        "location": location,
+        "weather": weather_service.get_live_weather(best_match["lat"], best_match["lng"]),
+        "sources": [
+            "OpenStreetMap Nominatim location search",
+            "CGWB Ground Water Resource Assessment 2025",
+            "Open-Meteo forecast and FAO-56 reference evapotranspiration"
+        ]
+    }
+    context["searched_place"] = best_match
+    context["requested_place"] = query.strip()
+    context["search_resolution"] = search_result
+    return context
+
+
+@app.get("/api/location/suggest")
+def suggest_locations(query: str = Query(..., min_length=3)):
+    search_result = weather_service.search_location_resilient(query)
+    suggestions = []
+    for item in search_result["results"][:5]:
+        concise_label = ", ".join(
+            value for value in [item.get("city"), item.get("district"), item.get("state")] if value
+        )
+        suggestions.append({**item, "concise_label": concise_label or item.get("display_name")})
+    return {
+        "suggestions": suggestions,
+        "requested_query": search_result["requested_query"],
+        "matched_query": search_result["matched_query"],
+        "fallback_used": search_result["fallback_used"],
+    }
+
 @app.post("/api/chat")
 def process_chat(req: ChatRequest):
     user_msg = req.message.strip()
     detected_state = extract_state_from_text(user_msg)
+    explicit_location_query = extract_explicit_location_query(user_msg)
+    named_unit = db_service.find_named_location_in_text(user_msg, state_hint=detected_state or "") if explicit_location_query else None
+    current_context = req.current_location if isinstance(req.current_location, dict) else None
     
     context_payload = {}
     visualization_payload = None
+    state_data = None
     
-    # 0. Advanced Geolocation & Weather Intent
-    # Attempt to resolve any location mentioned in the user message via OpenStreetMap
-    geo_results = weather_service.get_location_from_nominatim(user_msg)
+    # 0. Resolve an explicitly named place. Otherwise use the browser location
+    # supplied by the user as the conversation's default geographic context.
+    geo_search = weather_service.search_location_resilient(explicit_location_query) if explicit_location_query else None
+    geo_results = geo_search["results"] if geo_search else None
     best_geo = None
     if geo_results and len(geo_results) > 0:
         best_geo = geo_results[0]
@@ -250,6 +387,37 @@ def process_chat(req: ChatRequest):
         if best_geo.get("state") and not detected_state:
             # Re-run extraction to map to our ALL_STATES format
             detected_state = extract_state_from_text(best_geo["state"]) or best_geo["state"]
+        context_payload["location_resolution"] = {
+            "mode": "explicit",
+            "label": best_geo.get("display_name"),
+            "query": explicit_location_query,
+            "matched_query": geo_search.get("matched_query"),
+            "fallback_used": geo_search.get("fallback_used", False),
+        }
+    elif explicit_location_query:
+        if named_unit:
+            detected_state = detected_state or named_unit.get("state_name")
+            context_payload["block_data"] = named_unit
+        context_payload["location_resolution"] = {
+            "mode": "explicit_ungeocoded",
+            "label": explicit_location_query,
+            "query": explicit_location_query,
+        }
+    elif current_context:
+        current_location = current_context.get("location") or {}
+        current_weather = current_context.get("weather")
+        current_coordinates = current_context.get("coordinates") or {}
+        if current_location:
+            context_payload["current_location"] = current_location
+            context_payload["location_resolution"] = {
+                "mode": "current",
+                "label": current_location.get("selected_locality") or current_location.get("nearest_block") or current_location.get("detected_district"),
+                "coordinates": current_coordinates,
+                "user_referred_to_current_location": refers_to_current_location(user_msg),
+            }
+            detected_state = detected_state or current_location.get("detected_state")
+        if current_weather:
+            context_payload["weather_data"] = current_weather
 
 
     # 1. State Level Intent
@@ -261,6 +429,7 @@ def process_chat(req: ChatRequest):
             # Build Visual Chart Payload
             visualization_payload = {
                 "type": "state_analytics",
+                "state_name": state_data["state_name"],
                 "title": f"Groundwater Profile: {state_data['state_name']}",
                 "metrics": {
                     "stage_of_extraction": state_data.get("stage_of_extraction_pct", 0),
@@ -278,16 +447,22 @@ def process_chat(req: ChatRequest):
                 },
                 "category_breakdown": state_data.get("category_counts", {}),
                 "water_quality": state_data.get("water_quality", []),
-                "depth_trends": state_data.get("depth_trends")
+                "depth_trends": state_data.get("depth_trends"),
+                "factsheet": get_factsheet_visual_reference(state_data["state_name"])
             }
 
     # 2. Block Level Search
     # Combine original user message and the district from geocoding to improve hit rate
-    search_query = user_msg
-    if best_geo and best_geo.get("district"):
-        search_query += f" {best_geo['district']}"
-
-    found_block = db_service.find_block_exact_or_fuzzy(search_query, state_hint=detected_state or "")
+    found_block = None
+    if best_geo:
+        search_query = " ".join(filter(None, [explicit_location_query, best_geo.get("city"), best_geo.get("district")]))
+        found_block = db_service.find_block_exact_or_fuzzy(search_query, state_hint=detected_state or "")
+    elif explicit_location_query:
+        found_block = named_unit or db_service.find_block_exact_or_fuzzy(explicit_location_query, state_hint=detected_state or "")
+    elif current_context:
+        found_block = (current_context.get("location") or {}).get("block_data")
+    else:
+        found_block = db_service.find_block_exact_or_fuzzy(user_msg, state_hint=detected_state or "")
     if found_block:
         context_payload["block_data"] = found_block
         if not detected_state and found_block.get("state_name"):
@@ -306,6 +481,30 @@ def process_chat(req: ChatRequest):
                             "#f59e0b" if found_block["category"] == "Semi-Critical" else \
                             "#f97316" if found_block["category"] == "Critical" else "#ef4444"
         }
+        if state_data:
+            visualization_payload["state_profile"] = {
+                "type": "state_analytics",
+                "state_name": state_data["state_name"],
+                "title": f"Wider state context: {state_data['state_name']}",
+                "metrics": {
+                    "stage_of_extraction": state_data.get("stage_of_extraction_pct", 0),
+                    "total_recharge_bcm": state_data.get("total_annual_recharge", state_data.get("total_recharge_bcm", 0)),
+                    "total_extraction_bcm": state_data.get("total_annual_extraction", state_data.get("total_extraction_bcm", 0)),
+                    "future_available_bcm": state_data.get("net_availability_future", state_data.get("net_availability_future_bcm", 0))
+                },
+                "donut_chart": {
+                    "labels": ["Irrigation", "Industrial", "Domestic"],
+                    "data": [
+                        state_data.get("irrigation_extraction", state_data.get("irrigation_extraction_bcm", 0)),
+                        state_data.get("industrial_extraction", state_data.get("industrial_extraction_bcm", 0)),
+                        state_data.get("domestic_extraction", state_data.get("domestic_extraction_bcm", 0))
+                    ]
+                },
+                "category_breakdown": state_data.get("category_counts", {}),
+                "water_quality": state_data.get("water_quality", []),
+                "depth_trends": state_data.get("depth_trends"),
+                "factsheet": get_factsheet_visual_reference(state_data["state_name"])
+            }
 
     # 3. National Summary Intent
     if any(k in user_msg.lower() for k in ["national", "all india", "overall", "india summary", "total recharge"]):
@@ -320,6 +519,13 @@ def process_chat(req: ChatRequest):
                 "data": [nat["safe_blocks"], nat["semi_critical_blocks"], nat["critical_blocks"], nat["over_exploited_blocks"]]
             }
         }
+
+    if visualization_payload and context_payload.get("weather_data"):
+        visualization_payload["weather"] = context_payload["weather_data"]
+
+    if visualization_payload:
+        visualization_payload["visual_plan"] = visualization_service.build_visual_plan(user_msg, context_payload, visualization_payload)
+        visualization_payload["visual_catalog"] = visualization_service.catalog_summary()
 
     # 4. RAG qualitative snippet search
     rag_snippets = rag_service.search_corpus(user_msg, top_k=2)
@@ -338,7 +544,8 @@ def process_chat(req: ChatRequest):
         "reply": llm_result["text"],
         "source": llm_result["source"],
         "visualization": visualization_payload,
-        "context_used": bool(context_payload)
+        "context_used": bool(context_payload),
+        "location_resolution": context_payload.get("location_resolution")
     }
 
 # ----------------- SMART SUGGESTOR ENDPOINTS -----------------
@@ -434,6 +641,36 @@ def get_depth_trends(state: str = ""):
     Returns seasonal depth-to-water level trends across Indian states.
     """
     return db_service.get_all_depth_trends(state=state)
+
+
+@app.get("/api/visualizations/catalog")
+def get_visualization_catalog():
+    return visualization_service.catalog_summary()
+
+
+@app.get("/api/factsheets/{state_name}/pages/{page_number}.png")
+def get_factsheet_page(state_name: str, page_number: int):
+    reference = db_service.get_state_factsheet_reference(state_name)
+    if not reference:
+        raise HTTPException(status_code=404, detail="State fact sheet not found.")
+
+    factsheet_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "raw", "state_fact_sheets_2025"))
+    pdf_path = os.path.abspath(os.path.join(factsheet_dir, reference["file_name"]))
+    if os.path.commonpath([factsheet_dir, pdf_path]) != factsheet_dir or not os.path.exists(pdf_path):
+        raise HTTPException(status_code=404, detail="State fact sheet file not found.")
+
+    import fitz
+
+    with fitz.open(pdf_path) as document:
+        if page_number < 1 or page_number > document.page_count:
+            raise HTTPException(status_code=404, detail="Fact sheet page not found.")
+        page = document[page_number - 1]
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(1.45, 1.45), alpha=False)
+        return Response(
+            content=pixmap.tobytes("png"),
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
 @app.get("/api/location/resolve")
 def resolve_gps_location(lat: float = Query(18.5204), lng: float = Query(73.8567)):

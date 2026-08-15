@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#063b3b">
+  <title>Ask I.G.R.I.S. | Groundwater answers for INGRES</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Spline+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body data-page="chat">
+  <a class="skip-link" href="#chat-input">Skip to question</a>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">I</span><span>I.G.R.I.S. <small>for INGRES</small></span></a>
+    <button class="menu-button" type="button" aria-expanded="false" aria-controls="main-navigation">Menu</button>
+    <nav class="site-nav" id="main-navigation" aria-label="Main navigation">
+      <a href="/">Home</a><a href="/my-area.html">My Area</a><a href="/farm.html">Farm Plan</a><a href="/water-safety.html">Water Safety</a><a href="/recharge.html">Recharge</a><a class="active" href="/ask-igris.html">Ask I.G.R.I.S.</a>
+    </nav>
+  </header>
+
+  <main class="chat-page">
+    <section class="chat-commandbar" aria-label="Chat context">
+      <div>
+        <p class="eyebrow">GROUNDWATER INTELLIGENCE DESK</p>
+        <h1>Ask I.G.R.I.S.</h1>
+      </div>
+      <div class="chat-context-tools">
+        <label class="language-control" for="chat-language"><span>Answer language</span><select id="chat-language"><option value="English">English</option><option value="hi">हिन्दी</option></select></label>
+        <div class="location-context" id="chat-location-context">
+          <span class="location-signal" aria-hidden="true"></span>
+          <div><small>Default context</small><strong id="chat-location-label">Finding your current area…</strong></div>
+          <button id="chat-location-refresh" type="button">Update</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="chat-workspace" aria-label="I.G.R.I.S. groundwater chatbot">
+      <div class="chat-conversation">
+        <div class="chat-topline"><div><span class="pulse-dot"></span> Context-aware conversation</div><button class="chat-clear" id="chat-clear" type="button">New question</button></div>
+        <div class="chat-messages" id="chat-messages" aria-live="polite">
+          <article class="chat-message assistant-message">
+            <span class="message-avatar">I</span>
+            <div><p class="message-label">I.G.R.I.S.</p><p>I’ll use your current area unless you name another place. Ask about a borewell, irrigation, water quality, recharge, or a state-level groundwater trend.</p></div>
+          </article>
+        </div>
+        <div class="question-suggestions" aria-label="Suggested questions">
+          <button type="button" data-question="Can I drill a borewell in my area?">My borewell decision</button>
+          <button type="button" data-question="Should I irrigate my farm this week?">My irrigation plan</button>
+          <button type="button" data-question="What is the groundwater situation in Punjab?">Punjab profile</button>
+          <button type="button" data-question="Give me the national groundwater summary for India.">India overview</button>
+        </div>
+        <form class="chat-composer" id="chat-form">
+          <label class="sr-only" for="chat-input">Ask I.G.R.I.S. a groundwater question</label>
+          <textarea id="chat-input" rows="2" maxlength="800" placeholder="Ask in plain language — e.g., Can I drill a new borewell in my area?"></textarea>
+          <div class="composer-actions"><span>Enter to send · Shift + Enter for a new line</span><div><button class="voice-button" id="chat-voice" type="button" title="Speak your question">Speak</button><button class="primary-button" type="submit"><span>Ask I.G.R.I.S.</span> <b>↗</b></button></div></div>
+        </form>
+      </div>
+
+      <aside class="data-canvas" aria-label="Evidence visualisation canvas">
+        <div class="canvas-heading"><div><p class="eyebrow">AQUIFER ATLAS</p><h2>Evidence behind the answer</h2></div><div class="canvas-actions"><button id="print-evidence" type="button">Print brief</button><span class="canvas-count" id="canvas-count">128 visual recipes</span></div></div>
+        <div class="atlas-tabs" id="atlas-tabs" role="tablist" aria-label="Evidence views">
+          <button class="active" type="button" data-atlas-view="overview">Overview</button>
+          <button type="button" data-atlas-view="resource">Resources</button>
+          <button type="button" data-atlas-view="quality">Quality</button>
+          <button type="button" data-atlas-view="depth">Water levels</button>
+          <button type="button" data-atlas-view="source">Source sheet</button>
+        </div>
+        <div class="visualization-canvas" id="visualization-canvas" data-active-view="overview">
+          <div class="canvas-empty"><div class="empty-orbit"><span></span><i></i><b></b></div><h3>Your visual answer appears here</h3><p>Ask about a state, district or location to explore extraction, recharge, water quality and weather together.</p></div>
+        </div>
+        <p class="canvas-footnote" id="canvas-footnote">Visuals are generated from the data relevant to your question.</p>
+      </aside>
+    </section>
+  </main>
+  <dialog class="factsheet-dialog" id="factsheet-dialog">
+    <div class="factsheet-dialog-bar"><div><p>OFFICIAL CGWB FACT SHEET</p><strong id="factsheet-dialog-title">State source sheet</strong></div><div><button id="factsheet-zoom-out" type="button" aria-label="Zoom out">−</button><button id="factsheet-zoom-reset" type="button">Fit page</button><button id="factsheet-zoom-in" type="button" aria-label="Zoom in">+</button><button id="factsheet-dialog-close" type="button">Close</button></div></div>
+    <div class="factsheet-dialog-stage"><img id="factsheet-dialog-image" alt=""></div>
+  </dialog>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -23,6 +23,7 @@ yarn-error.log*
 
 # IDE, OS & Internal Local AI Workspace
 .vscode/
+.vs/
 .idea/
 .DS_Store
 Thumbs.db
@@ -33,6 +34,7 @@ agent/
 # Temp html dumps
 *.html
 !frontend/index.html
+!frontend/*.html
 
 # Internal Notice / Private Docs
 1st Notice-Participation in the SIH-2026.pdf

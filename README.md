@@ -10,7 +10,11 @@
 ## 📌 Project Overview
 **I.G.R.I.S.** is an intelligent, multilingual virtual assistant designed to serve as the conversational front-door to the **IN-GRES** (India-Groundwater Resource Estimation System) platform. 
 
-It transforms dense national groundwater compilation reports, 36 state fact sheets, and **6,635 granular block-level records** into an instant, interactive decision-support assistant for farmers, industries, citizens, and policymakers.
+It transforms dense national groundwater reports, 36 state fact sheets, and **6,635 granular block-level records** into an instant, location-aware decision assistant for farmers, residents, industries, and policymakers.
+
+![I.G.R.I.S. citizen experience](docs/preview.png)
+
+The assistant understands phrases such as **“my area”** as the user's selected or GPS location, while an explicitly named place overrides that context. It combines official INGRES/CGWB evidence with live weather and transparent location resolution rather than pretending that one block represents every locality.
 
 ---
 
@@ -27,11 +31,12 @@ INGRES Government Data & Reports
    │
    ├──> AI RAG Knowledge Corpus (data/processed/state_factsheets_corpus.json)
    │
-   └──> IGRIS Conversational Engine
-          ├── NL2SQL Query Router (Instant factual answers)
-          ├── Multilingual Support (Hindi & English)
-          ├── Interactive Visualizations (Charts & Gauges)
-          └── Leaflet GIS Maps (Color-coded block danger overlays)
+   └──> I.G.R.I.S. Conversational Engine
+          ├── Context-aware location resolver (GPS, locality, city, district, state)
+          ├── Local LLM with evidence-grounded deterministic fallback
+          ├── 128 visualization recipes across 12 evidence families
+          ├── Live Open-Meteo weather and irrigation context
+          └── Original CGWB fact-sheet evidence viewer
 ```
 
 ---
@@ -52,6 +57,9 @@ INGRES Government Data & Reports
 │   │   └── CGWB_Dynamic_GW_Resources_India_2025.pdf # National Ground Water Assessment Report
 │   ├── build_master_database.py              # Master data ingestion pipeline
 │   └── generate_pdf_guide.py                 # PDF documentation generator
+├── frontend/                                  # Six-page responsive citizen experience
+├── server/                                    # FastAPI context, chat, data, and visual APIs
+├── docs/                                      # Product screenshots
 ├── SIH2026_INGRES_AI_Assistant_Complete_Guide.pdf # Complete Project Guide for NotebookLM
 └── README.md
 ```
@@ -59,10 +67,36 @@ INGRES Government Data & Reports
 ---
 
 ## 🚀 Key Features
-1. **Groundwater Decision Brief**: Search a block, district, or city and receive a clear local verdict, official classification, water-quality context, and four role-specific actions for a farmer, resident, business, or local officer.
-2. **Plain-Language Water Inquiries**: Ask questions like *"Is it safe to dig a tube-well in Sangrur, Punjab?"* or *"Compare groundwater recharge in Gujarat and Maharashtra."*
-3. **Recharge Planning**: Estimate rooftop rainwater capture, practical storage, and household-supply potential using state rainfall assumptions.
-4. **Evidence-First AI Follow-ups**: Deep-dive questions stay grounded in indexed CGWB/GWRA data, with a deterministic offline fallback when the local LLM is unavailable.
+1. **Context-aware groundwater copilot**: “My area” uses GPS or the active selection; a named location such as *Kalwad Wasti, Pune* intelligently overrides it.
+2. **Resilient neighborhood search**: OpenStreetMap-backed suggestions, spelling/transliteration fallback, exact coordinates, and transparent nearest-assessment matching.
+3. **Evidence canvas**: 128 selectable visualization recipes covering resource balance, extraction stress, quality, depth, trends, weather, comparisons, actions, and source evidence.
+4. **Original source sheets**: Inspect indexed CGWB state fact-sheet pages in a fit-to-page viewer or a zoomable full-screen evidence dialog.
+5. **Citizen workflows**: Dedicated pages for local status, farming decisions, water safety, and rooftop recharge planning.
+6. **Accessible interaction**: English/Hindi prompts, voice input where supported, printable decision briefs, responsive navigation, and keyboard-friendly controls.
+7. **Live local context**: Open-Meteo conditions and forecast data turn official annual assessments into practical “what should I do today?” guidance.
+8. **Graceful offline intelligence**: When the local language model is unavailable, grounded rules still produce useful answers without inventing official facts.
+
+![I.G.R.I.S. conversational evidence canvas](docs/chat-preview.png)
+
+---
+
+## 🧑‍💻 Run Locally
+
+```powershell
+cd server
+pip install -r requirements.txt
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Open [http://localhost:8000](http://localhost:8000). Location search and weather require internet access. A local OpenAI-compatible model server is optional; the evidence-grounded fallback remains available without one.
+
+### Core APIs
+
+- `GET /api/local-context/search?query=...` — resolve a named place and return groundwater plus weather context.
+- `GET /api/location/suggest?query=...` — locality autocomplete and transliteration-aware suggestions.
+- `POST /api/chat` — context-aware groundwater answers and visualization payloads.
+- `GET /api/visualizations/catalog` — the complete visualization recipe catalog.
+- `GET /api/factsheets/{state}/pages/{page}.png` — rendered official source-sheet evidence.
 
 ---
 

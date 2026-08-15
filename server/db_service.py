@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import re
 from typing import List, Dict, Any, Optional
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "processed", "ingres_master.db"))
@@ -206,14 +207,15 @@ def find_block_exact_or_fuzzy(user_msg_or_block: str, state_hint: str = "") -> O
                     d["category"] = format_category(d["category"])
                     return d
                     
-        # 2. Exact block match anywhere across India
-        for cand in candidates:
-            cursor.execute(f"{select_sql} WHERE LOWER(block_name) = ? LIMIT 1", (cand.lower(),))
-            r = cursor.fetchone()
-            if r:
-                d = dict(r)
-                d["category"] = format_category(d["category"])
-                return d
+        # 2. Exact block match anywhere only when no state has been resolved
+        if not state_hint:
+            for cand in candidates:
+                cursor.execute(f"{select_sql} WHERE LOWER(block_name) = ? LIMIT 1", (cand.lower(),))
+                r = cursor.fetchone()
+                if r:
+                    d = dict(r)
+                    d["category"] = format_category(d["category"])
+                    return d
 
         # 3. Exact district match within state_hint
         if state_hint:
@@ -225,14 +227,15 @@ def find_block_exact_or_fuzzy(user_msg_or_block: str, state_hint: str = "") -> O
                     d["category"] = format_category(d["category"])
                     return d
                     
-        # 4. Exact district match anywhere
-        for cand in candidates:
-            cursor.execute(f"{select_sql} WHERE LOWER(district) = ? LIMIT 1", (cand.lower(),))
-            r = cursor.fetchone()
-            if r:
-                d = dict(r)
-                d["category"] = format_category(d["category"])
-                return d
+        # 4. Exact district match anywhere only when no state has been resolved
+        if not state_hint:
+            for cand in candidates:
+                cursor.execute(f"{select_sql} WHERE LOWER(district) = ? LIMIT 1", (cand.lower(),))
+                r = cursor.fetchone()
+                if r:
+                    d = dict(r)
+                    d["category"] = format_category(d["category"])
+                    return d
 
         # 5. Prefix match STRICTLY within state_hint if given
         if state_hint:
@@ -264,6 +267,43 @@ def find_block_exact_or_fuzzy(user_msg_or_block: str, state_hint: str = "") -> O
                     return d
 
         return None
+
+
+def find_named_location_in_text(text: str, state_hint: str = "") -> Optional[Dict[str, Any]]:
+    tokens = re.findall(r"[A-Za-z][A-Za-z'-]*", text)
+    if not tokens:
+        return None
+    candidates = []
+    for width in range(min(4, len(tokens)), 0, -1):
+        for index in range(0, len(tokens) - width + 1):
+            candidate = " ".join(tokens[index:index + width]).lower()
+            if len(candidate) >= 3 and candidate not in candidates:
+                candidates.append(candidate)
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        base_sql = """
+            SELECT id, state AS state_name, district AS district_name, block_name, categorization AS category
+            FROM blocks_categorization
+            WHERE (LOWER(district) = ? OR LOWER(REPLACE(block_name, '_', ' ')) = ?)
+        """
+        for candidate in candidates:
+            params = [candidate, candidate]
+            sql = base_sql
+            if state_hint:
+                sql += " AND LOWER(state) LIKE ?"
+                params.append(f"%{state_hint.lower()}%")
+            sql += " ORDER BY CASE WHEN LOWER(district) = ? THEN 0 ELSE 1 END LIMIT 1"
+            params.append(candidate)
+            cursor.execute(sql, params)
+            row = cursor.fetchone()
+            if row:
+                result = dict(row)
+                result["category"] = format_category(result["category"])
+                result["matched_name"] = candidate
+                result["matched_kind"] = "district" if result["district_name"].lower() == candidate else "block"
+                return result
+    return None
 
 
 def get_water_balancing_recommendations() -> List[Dict[str, Any]]:
@@ -343,6 +383,22 @@ def get_all_depth_trends(state: str = "") -> List[Dict[str, Any]]:
         cursor.execute(sql, params)
         return [dict(r) for r in cursor.fetchall()]
 
+
+def get_state_factsheet_reference(state: str) -> Optional[Dict[str, Any]]:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT state_name, file_name
+            FROM state_factsheet_fulltext
+            WHERE LOWER(state_name) LIKE ?
+            LIMIT 1
+            """,
+            (f"%{state.lower()}%",),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
 INDIAN_DISTRICT_CENTROIDS = [
     {"district": "Pune", "state": "Maharashtra", "lat": 18.5204, "lng": 73.8567, "default_block": "Haveli"},
     {"district": "Mumbai", "state": "Maharashtra", "lat": 19.0760, "lng": 72.8777, "default_block": "Mumbai City"},
@@ -418,3 +474,103 @@ def resolve_location_from_coords(lat: float, lng: float) -> Dict[str, Any]:
     }
 
 
+def resolve_location_from_search(lat: float, lng: float, searched_place: Dict[str, Any], query: str = "") -> Dict[str, Any]:
+    """Build a local context from the place returned by geocoding, without snapping it to a city centroid."""
+    raw_state = str(searched_place.get("state") or "").strip()
+    raw_district = str(searched_place.get("district") or "").strip()
+    raw_city = str(searched_place.get("city") or "").strip()
+    state_detail = get_state_detail(raw_state) if raw_state else None
+    state = state_detail.get("state_name", raw_state) if state_detail else raw_state
+    state_filter = state.lower() if state else "__unmatched_state__"
+
+    def clean_name(value: str) -> str:
+        return " ".join(value.lower().replace("district", "").split())
+
+    candidates = []
+    for value in (raw_district, raw_city, query):
+        value = str(value or "").strip()
+        if value and value.lower() not in {item.lower() for item in candidates}:
+            candidates.append(value)
+
+    block_detail = None
+    match_method = "No matching official assessment unit"
+    nearby_centroids = [
+        item for item in INDIAN_DISTRICT_CENTROIDS
+        if clean_name(item["state"]) == clean_name(state)
+        and (
+            clean_name(item["district"]) == clean_name(raw_district)
+            or clean_name(item["district"]) == clean_name(raw_city)
+        )
+    ]
+    if nearby_centroids:
+        nearest_centroid = min(
+            nearby_centroids,
+            key=lambda item: (item["lat"] - lat) ** 2 + (item["lng"] - lng) ** 2,
+        )
+        block_detail = find_block_exact_or_fuzzy(nearest_centroid.get("default_block", ""), state_hint=state)
+        if block_detail:
+            match_method = "Nearest indexed assessment unit for the matched city"
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        for candidate in candidates if not block_detail else []:
+            cursor.execute(
+                """
+                SELECT id, state AS state_name, district AS district_name, block_name, categorization AS category
+                FROM blocks_categorization
+                WHERE LOWER(district) = ? AND LOWER(state) LIKE ?
+                ORDER BY block_name
+                LIMIT 1
+                """,
+                (clean_name(candidate), f"%{state_filter}%"),
+            )
+            row = cursor.fetchone()
+            if row:
+                block_detail = dict(row)
+                block_detail["category"] = format_category(block_detail["category"])
+                match_method = "District-level official assessment unit"
+                break
+
+        if not block_detail:
+            for candidate in candidates:
+                cursor.execute(
+                    """
+                    SELECT id, state AS state_name, district AS district_name, block_name, categorization AS category
+                    FROM blocks_categorization
+                    WHERE LOWER(block_name) = ? AND LOWER(state) LIKE ?
+                    LIMIT 1
+                    """,
+                    (clean_name(candidate), f"%{state_filter}%"),
+                )
+                row = cursor.fetchone()
+                if row:
+                    block_detail = dict(row)
+                    block_detail["category"] = format_category(block_detail["category"])
+                    match_method = "Block-level official assessment unit"
+                    break
+
+    district = raw_district or raw_city or "Selected locality"
+    locality_label = raw_city or raw_district or query or "Selected locality"
+    category = block_detail.get("category") if block_detail else "Assessment unit unavailable"
+    water_quality = get_all_water_quality(state=state) if state else []
+    depth_trends = get_all_depth_trends(state=state) if state else []
+
+    return {
+        "detected_state": state or "State not identified",
+        "detected_district": district,
+        "nearest_block": block_detail.get("block_name") if block_detail else "No exact assessment unit indexed",
+        "category": category,
+        "lat": lat,
+        "lng": lng,
+        "block_data": block_detail,
+        "state_data": state_detail,
+        "water_quality": water_quality[:4],
+        "depth_trends": depth_trends[:3],
+        "selected_locality": locality_label,
+        "match_method": match_method,
+        "borewell_verdict": {
+            "is_permissible": category == "Safe",
+            "status": "Permissible without restriction" if category == "Safe" else "Verify the nearest official assessment unit before drilling",
+            "advice": "Aquifer extraction is classified as safe in the matched official unit." if category == "Safe" else "This search result is not a well-level clearance. Use the local CGWA/CGWB process before drilling or expanding extraction."
+        }
+    }

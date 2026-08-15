@@ -21,14 +21,21 @@ def generate_llm_response(
     evidence_text = ""
     if context_data:
         evidence_text = "\n[OFFICIAL CGWB & GWRA-2025 VERIFIED DATA]:\n"
+        if "location_resolution" in context_data:
+            resolution = context_data["location_resolution"]
+            mode = resolution.get("mode", "unknown")
+            evidence_text += f"- Geographic context mode: {mode}\n"
+            evidence_text += f"- Location being discussed: {resolution.get('label', 'Not resolved')}\n"
+            if mode == "current":
+                evidence_text += "- The user did not name another place, so this answer should use their permission-based current location.\n"
         if "block_data" in context_data:
             b = context_data["block_data"]
             evidence_text += f"- Assessment Unit: {b.get('block_name')} Block, {b.get('district_name')} District, {b.get('state_name')}\n"
             evidence_text += f"- Official Categorization: {b.get('category')} (GWRA-2025 / GEC-2015)\n"
             if b.get("category") == "Over-Exploited":
-                evidence_text += "- Regulatory Clearance: Extraction exceeds 100% of replenishable recharge. Prohibited for new non-drinking tubewells without CGWA NOC. Mandatory 100-200% artificial recharge.\n"
+                evidence_text += "- Decision implication: Extraction exceeds 100% of replenishable recharge. Treat new or expanded extraction as high-risk and verify current CGWA/state permission and recharge conditions before acting.\n"
             elif b.get("category") == "Safe":
-                evidence_text += "- Regulatory Clearance: Sustainable aquifer limits. Tubewells permissible for agriculture and drinking.\n"
+                evidence_text += "- Decision implication: The assessment unit is categorized Safe, but project-specific permission, well yield, and water quality still require local verification.\n"
         
         if "state_data" in context_data:
             s = context_data["state_data"]
@@ -83,9 +90,13 @@ MANDATORY LANGUAGE RULES:
 
 CONTENT & TONE RULES:
 - Ground your answer in the official CGWB verified data and live agro-meteorological weather patterns provided below.
-- Give direct, authoritative, complete, and actionable hydrological insights with clean bullet points and section headers. Never stop mid-sentence.
+- Start with the direct answer in one or two sentences. Do not introduce yourself or repeat the I.G.R.I.S. name.
+- Keep the complete answer between 180 and 450 words unless the user explicitly asks for a detailed report.
+- Use no more than three short section headings and five bullets. Never output raw table syntax.
+- Distinguish state-level evidence, assessment-unit evidence, live weather, and well-level facts. Never imply that state data is an exact measurement for one household well.
 - If the user asks about farming/crops or irrigation, incorporate the current calendar season, live rainfall forecast, and smart irrigation guidance.
-- Explain the real-world impact (whether borewells are permissible, CGWA NOC requirements, water quality risks like Fluoride/Arsenic, and low-water crop suggestions).
+- For borewell, extraction, or commercial-sale questions, clearly recommend checking the applicable CGWA/state permission process. Do not claim a legal prohibition or guaranteed permission unless that exact rule is present in the evidence.
+- Explain the real-world impact, water-quality screening signals, and low-water crop suggestions when relevant.
 """
 
     user_prompt = f"User Question: {user_message}\n{evidence_text}\n\nProvide an authoritative, complete, and detailed response in {lang_name}:"
@@ -104,7 +115,7 @@ CONTENT & TONE RULES:
         "model": DEFAULT_MODEL,
         "messages": messages,
         "temperature": 0.15,
-        "max_tokens": 3000
+        "max_tokens": 1100
     }
 
     try:

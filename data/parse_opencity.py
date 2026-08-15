@@ -1,7 +1,15 @@
-import json, sys
+import argparse
+import json
+import sys
+from pathlib import Path
+
 sys.stdout.reconfigure(encoding='utf-8')
 
-with open(r'C:\Users\PC\.gemini\antigravity-ide\brain\6ffed4fa-cd26-416e-a7ef-4f5f3bad23c3\.system_generated\steps\158\content.md', encoding='utf-8') as f:
+parser = argparse.ArgumentParser(description="Inspect resources in a saved OpenCity API response.")
+parser.add_argument("manifest", type=Path, help="Markdown or JSON file containing the API response")
+args = parser.parse_args()
+
+with args.manifest.open(encoding='utf-8') as f:
     # Skip markdown header lines until we hit the JSON
     content = f.read()
     # Find the JSON start
