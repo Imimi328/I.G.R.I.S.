@@ -1,10 +1,40 @@
 import requests
 import json
+import os
 import re
 from typing import Dict, Any, List, Optional
 
-LMSTUDIO_URL = "http://localhost:1234/v1/chat/completions"
-DEFAULT_MODEL = "gemma-4-e2b-it"
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:1234/v1").rstrip("/")
+LLM_URL = f"{LLM_BASE_URL}/chat/completions"
+DEFAULT_MODEL = os.getenv("LLM_MODEL", "gemma-4-e2b-it")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
+
+LANGUAGE_NAMES = {
+    "en": "English",
+    "as": "Assamese (অসমীয়া)",
+    "bn": "Bengali (বাংলা)",
+    "brx": "Bodo (बर’)",
+    "doi": "Dogri (डोगरी)",
+    "gu": "Gujarati (ગુજરાતી)",
+    "hi": "Hindi (हिन्दी)",
+    "kn": "Kannada (ಕನ್ನಡ)",
+    "ks": "Kashmiri (کٲشُر)",
+    "gom": "Konkani (कोंकणी)",
+    "mai": "Maithili (मैथिली)",
+    "ml": "Malayalam (മലയാളം)",
+    "mni": "Manipuri (মৈতৈলোন্)",
+    "mr": "Marathi (मराठी)",
+    "ne": "Nepali (नेपाली)",
+    "or": "Odia (ଓଡ଼ିଆ)",
+    "pa": "Punjabi (ਪੰਜਾਬੀ)",
+    "sa": "Sanskrit (संस्कृतम्)",
+    "sat": "Santali (ᱥᱟᱱᱛᱟᱲᱤ)",
+    "sd": "Sindhi (سنڌي)",
+    "ta": "Tamil (தமிழ்)",
+    "te": "Telugu (తెలుగు)",
+    "ur": "Urdu (اردو)",
+}
 
 def generate_llm_response(
     user_message: str, 
@@ -13,9 +43,9 @@ def generate_llm_response(
     language: str = "en"
 ) -> Dict[str, Any]:
     
-    # Strict language determination
-    is_hindi = language == "hi" or bool(re.search(r'[\u0900-\u097F]', user_message))
-    lang_name = "Hindi (हिंदी)" if is_hindi else "English"
+    language_code = language if language in LANGUAGE_NAMES else "en"
+    is_hindi = language_code == "hi"
+    lang_name = LANGUAGE_NAMES[language_code]
     
     # Clean structured data representation
     evidence_text = ""
@@ -85,8 +115,8 @@ def generate_llm_response(
 MANDATORY LANGUAGE RULES:
 - The user is communicating in {lang_name}.
 - You MUST write your ENTIRE answer strictly and fluently in {lang_name}.
-- If the language is English: Use ONLY clear, polished English. Do NOT output Hindi words or Devanagari text.
-- If the language is Hindi: Use standard Hindi in Devanagari script.
+- Do not switch to English unless the user explicitly asks you to translate.
+- Keep official place names, acronyms, measurements, and source titles intact when translating them improves accuracy.
 
 CONTENT & TONE RULES:
 - Ground your answer in the official CGWB verified data and live agro-meteorological weather patterns provided below.
@@ -97,6 +127,8 @@ CONTENT & TONE RULES:
 - If the user asks about farming/crops or irrigation, incorporate the current calendar season, live rainfall forecast, and smart irrigation guidance.
 - For borewell, extraction, or commercial-sale questions, clearly recommend checking the applicable CGWA/state permission process. Do not claim a legal prohibition or guaranteed permission unless that exact rule is present in the evidence.
 - Explain the real-world impact, water-quality screening signals, and low-water crop suggestions when relevant.
+- Treat previous turns as conversational context, but treat the supplied structured evidence as the authority for factual claims.
+- If evidence is missing, say exactly what is missing and suggest the next useful search instead of guessing.
 """
 
     user_prompt = f"User Question: {user_message}\n{evidence_text}\n\nProvide an authoritative, complete, and detailed response in {lang_name}:"
@@ -106,8 +138,9 @@ CONTENT & TONE RULES:
     ]
     
     if conversation_history:
-        for msg in conversation_history[-3:]:
-            messages.append(msg)
+        for msg in conversation_history[-8:]:
+            if msg.get("role") in {"user", "assistant"} and isinstance(msg.get("content"), str):
+                messages.append({"role": msg["role"], "content": msg["content"][:5000]})
             
     messages.append({"role": "user", "content": user_prompt})
 
@@ -115,26 +148,20 @@ CONTENT & TONE RULES:
         "model": DEFAULT_MODEL,
         "messages": messages,
         "temperature": 0.15,
-        "max_tokens": 1100
+        "max_tokens": 1400
     }
 
     try:
-        resp = requests.post(LMSTUDIO_URL, json=payload, timeout=25)
+        headers = {"Content-Type": "application/json"}
+        if LLM_API_KEY:
+            headers["Authorization"] = f"Bearer {LLM_API_KEY}"
+        resp = requests.post(LLM_URL, json=payload, headers=headers, timeout=LLM_TIMEOUT_SECONDS)
         if resp.status_code == 200:
             data = resp.json()
             reply = data["choices"][0]["message"]["content"].strip()
-            
-            # Verify language integrity
-            if not is_hindi and bool(re.search(r'[\u0900-\u097F]', reply[:100])):
-                # If model mistakenly generated Hindi for an English query, fallback to deterministic English
-                return {
-                    "text": generate_deterministic_fallback(user_message, context_data, is_hindi=False),
-                    "source": "IGRIS Grounded Hydro-Engine"
-                }
-                
             return {
                 "text": reply,
-                "source": f"LMStudio ({DEFAULT_MODEL})"
+                "source": f"OpenAI-compatible model ({DEFAULT_MODEL})"
             }
     except Exception as e:
         print(f"[Warning] LMStudio call failed: {e}. Using deterministic fallback.")

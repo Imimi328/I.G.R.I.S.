@@ -16,7 +16,7 @@
     <a class="brand" href="/"><span class="brand-mark">I</span><span>I.G.R.I.S. <small>for INGRES</small></span></a>
     <button class="menu-button" type="button" aria-expanded="false" aria-controls="main-navigation">Menu</button>
     <nav class="site-nav" id="main-navigation" aria-label="Main navigation">
-      <a href="/">Home</a><a href="/my-area.html">My Area</a><a href="/farm.html">Farm Plan</a><a href="/water-safety.html">Water Safety</a><a href="/recharge.html">Recharge</a><a class="active" href="/ask-igris.html">Ask I.G.R.I.S.</a>
+      <a href="/">Home</a><a href="/my-area.html">My Area</a><a href="/farm.html">Farm Plan</a><a href="/water-safety.html">Water Safety</a><a href="/recharge.html">Recharge</a><a href="/about.html">About</a><a class="active" href="/ask-igris.html">Ask I.G.R.I.S.</a>
     </nav>
   </header>
 
@@ -27,7 +27,7 @@
         <h1>Ask I.G.R.I.S.</h1>
       </div>
       <div class="chat-context-tools">
-        <label class="language-control" for="chat-language"><span>Answer language</span><select id="chat-language"><option value="English">English</option><option value="hi">हिन्दी</option></select></label>
+        <label class="language-control" for="chat-language"><span>Answer language · 23 options</span><select id="chat-language"><option value="en">English</option></select></label>
         <div class="location-context" id="chat-location-context">
           <span class="location-signal" aria-hidden="true"></span>
           <div><small>Default context</small><strong id="chat-location-label">Finding your current area…</strong></div>
@@ -38,7 +38,7 @@
 
     <section class="chat-workspace" aria-label="I.G.R.I.S. groundwater chatbot">
       <div class="chat-conversation">
-        <div class="chat-topline"><div><span class="pulse-dot"></span> Context-aware conversation</div><button class="chat-clear" id="chat-clear" type="button">New question</button></div>
+        <div class="chat-topline"><div><span class="pulse-dot"></span> Context-aware conversation</div><div><button class="chat-clear" id="chat-history-open" type="button">Saved chats</button><button class="chat-clear" id="chat-clear" type="button">New question</button></div></div>
         <div class="chat-messages" id="chat-messages" aria-live="polite">
           <article class="chat-message assistant-message">
             <span class="message-avatar">I</span>
@@ -52,8 +52,10 @@
           <button type="button" data-question="Give me the national groundwater summary for India.">India overview</button>
         </div>
         <form class="chat-composer" id="chat-form">
+          <div class="chat-auth-gate" id="chat-auth-gate"><div><strong>Sign in to generate and save answers</strong><span>All pages and official evidence remain public.</span></div><button id="chat-auth-open" type="button">Continue with Google</button></div>
           <label class="sr-only" for="chat-input">Ask I.G.R.I.S. a groundwater question</label>
           <textarea id="chat-input" rows="2" maxlength="800" placeholder="Ask in plain language — e.g., Can I drill a new borewell in my area?"></textarea>
+          <p class="voice-status" id="voice-status" aria-live="polite">Choose any listed Indian language, then type or speak.</p>
           <div class="composer-actions"><span>Enter to send · Shift + Enter for a new line</span><div><button class="voice-button" id="chat-voice" type="button" title="Speak your question">Speak</button><button class="primary-button" type="submit"><span>Ask I.G.R.I.S.</span> <b>↗</b></button></div></div>
         </form>
       </div>
@@ -77,6 +79,10 @@
   <dialog class="factsheet-dialog" id="factsheet-dialog">
     <div class="factsheet-dialog-bar"><div><p>OFFICIAL CGWB FACT SHEET</p><strong id="factsheet-dialog-title">State source sheet</strong></div><div><button id="factsheet-zoom-out" type="button" aria-label="Zoom out">−</button><button id="factsheet-zoom-reset" type="button">Fit page</button><button id="factsheet-zoom-in" type="button" aria-label="Zoom in">+</button><button id="factsheet-dialog-close" type="button">Close</button></div></div>
     <div class="factsheet-dialog-stage"><img id="factsheet-dialog-image" alt=""></div>
+  </dialog>
+  <dialog class="chat-history-dialog" id="chat-history">
+    <div class="history-heading"><div><p class="eyebrow">PRIVATE ACCOUNT HISTORY</p><h2>Saved conversations</h2></div><button id="chat-history-close" type="button">Close</button></div>
+    <div class="chat-history-list" id="chat-history-list"><div class="history-empty">Loading your conversations…</div></div>
   </dialog>
   <script src="/app.js"></script>
 </body>

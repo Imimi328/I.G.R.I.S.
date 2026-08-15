@@ -6,7 +6,11 @@ from typing import List, Dict, Any, Optional
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from fastapi import FastAPI, Query, HTTPException, Response
+import settings
+
+settings.load_project_env()
+
+from fastapi import FastAPI, Query, HTTPException, Response, Depends, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -16,6 +20,7 @@ import rag_service
 import llm_service
 import weather_service
 import visualization_service
+import auth_service
 
 app = FastAPI(
     title="I.G.R.I.S. API Engine",
@@ -26,15 +31,17 @@ app = FastAPI(
 # Enable CORS for Vite frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+auth_service.initialize_accounts()
+
 class ChatRequest(BaseModel):
     message: str
-    conversation_id: Optional[str] = "default"
+    conversation_id: Optional[str] = None
     history: Optional[List[Dict[str, str]]] = []
     language: Optional[str] = "en"
     current_location: Optional[Dict[str, Any]] = None
@@ -52,6 +59,63 @@ class CropRequest(BaseModel):
 class AssessmentRequest(BaseModel):
     location: str
     audience: Optional[str] = "farmer"
+
+
+class GoogleCredentialRequest(BaseModel):
+    credential: str
+
+
+def require_user(igris_session: Optional[str] = Cookie(default=None)) -> Dict[str, Any]:
+    user = auth_service.verify_session(igris_session)
+    if not user:
+        raise HTTPException(status_code=401, detail="Sign in with Google to generate an I.G.R.I.S. answer.")
+    return user
+
+
+@app.get("/api/auth/config")
+def get_auth_config():
+    return auth_service.public_config()
+
+
+@app.post("/api/auth/google")
+def sign_in_with_google(req: GoogleCredentialRequest, response: Response):
+    try:
+        user = auth_service.verify_google_credential(req.credential)
+    except (ValueError, RuntimeError) as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    response.set_cookie(value=auth_service.create_session(user), **auth_service.cookie_options())
+    return {"user": user}
+
+
+@app.get("/api/auth/me")
+def get_current_user(user: Dict[str, Any] = Depends(require_user)):
+    return {"user": user}
+
+
+@app.post("/api/auth/logout")
+def sign_out(response: Response):
+    response.delete_cookie("igris_session", path="/")
+    return {"signed_out": True}
+
+
+@app.get("/api/conversations")
+def get_conversations(user: Dict[str, Any] = Depends(require_user)):
+    return {"conversations": auth_service.list_conversations(user["sub"])}
+
+
+@app.get("/api/conversations/{conversation_id}")
+def get_conversation(conversation_id: str, user: Dict[str, Any] = Depends(require_user)):
+    conversation = auth_service.get_conversation(user["sub"], conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return {"conversation": conversation}
+
+
+@app.delete("/api/conversations/{conversation_id}")
+def delete_conversation(conversation_id: str, user: Dict[str, Any] = Depends(require_user)):
+    if not auth_service.delete_conversation(user["sub"], conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return {"deleted": True}
 
 # ----------------- INTENT & ENTITY EXTRACTION -----------------
 
@@ -250,7 +314,7 @@ def health_check():
         "service": "I.G.R.I.S. Core Backend",
         "database": "ingres_master.db (Connected)",
         "total_blocks_indexed": nat.get("total_blocks", 6635),
-        "llm_provider": f"LMStudio ({llm_service.DEFAULT_MODEL})"
+        "llm_provider": f"OpenAI-compatible gateway ({llm_service.DEFAULT_MODEL})"
     }
 
 @app.get("/api/stats/national")
@@ -355,8 +419,19 @@ def suggest_locations(query: str = Query(..., min_length=3)):
     }
 
 @app.post("/api/chat")
-def process_chat(req: ChatRequest):
+def process_chat(req: ChatRequest, user: Dict[str, Any] = Depends(require_user)):
     user_msg = req.message.strip()
+    if not user_msg:
+        raise HTTPException(status_code=400, detail="Enter a groundwater question.")
+    try:
+        conversation = auth_service.ensure_conversation(user["sub"], req.conversation_id, user_msg)
+    except PermissionError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    saved_conversation = auth_service.get_conversation(user["sub"], conversation["id"])
+    persisted_history = [
+        {"role": message["role"], "content": message["content"]}
+        for message in (saved_conversation or {}).get("messages", [])[-12:]
+    ]
     detected_state = extract_state_from_text(user_msg)
     explicit_location_query = extract_explicit_location_query(user_msg)
     named_unit = db_service.find_named_location_in_text(user_msg, state_hint=detected_state or "") if explicit_location_query else None
@@ -532,15 +607,25 @@ def process_chat(req: ChatRequest):
     if rag_snippets:
         context_payload["knowledge_snippets"] = rag_snippets
 
-    # 5. Call LMStudio (gemma-4-e2b-it)
+    # 5. Call the configured OpenAI-compatible model gateway
     llm_result = llm_service.generate_llm_response(
         user_message=user_msg,
         context_data=context_payload,
-        conversation_history=req.history,
+        conversation_history=persisted_history or req.history,
         language=req.language
     )
 
+    auth_service.save_exchange(
+        user_sub=user["sub"],
+        conversation_id=conversation["id"],
+        question=user_msg,
+        answer=llm_result["text"],
+        source=llm_result["source"],
+        visualization=visualization_payload,
+    )
+
     return {
+        "conversation_id": conversation["id"],
         "reply": llm_result["text"],
         "source": llm_result["source"],
         "visualization": visualization_payload,

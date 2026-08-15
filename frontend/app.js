@@ -1,13 +1,33 @@
-const appState = { activeContext: null, chatLocation: null, chatHistory: [] };
+const appState = {
+  activeContext: null,
+  chatLocation: null,
+  chatHistory: [],
+  conversationId: null,
+  user: null,
+  authConfig: null,
+  authReady: null
+};
 const $ = (selector) => document.querySelector(selector);
 const escapeHTML = (value = '') => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 const formatNumber = (value) => Number(value || 0).toLocaleString('en-IN');
+
+const CHAT_LANGUAGES = [
+  ['en', 'English', 'en-IN'], ['as', 'অসমীয়া', 'as-IN'], ['bn', 'বাংলা', 'bn-IN'],
+  ['brx', 'बरʼ (Bodo)', 'brx-IN'], ['doi', 'डोगरी', 'doi-IN'], ['gu', 'ગુજરાતી', 'gu-IN'],
+  ['hi', 'हिन्दी', 'hi-IN'], ['kn', 'ಕನ್ನಡ', 'kn-IN'], ['ks', 'کٲشُر', 'ks-IN'],
+  ['gom', 'कोंकणी', 'kok-IN'], ['mai', 'मैथिली', 'mai-IN'], ['ml', 'മലയാളം', 'ml-IN'],
+  ['mni', 'মৈতৈলোন্', 'mni-IN'], ['mr', 'मराठी', 'mr-IN'], ['ne', 'नेपाली', 'ne-NP'],
+  ['or', 'ଓଡ଼ିଆ', 'or-IN'], ['pa', 'ਪੰਜਾਬੀ', 'pa-IN'], ['sa', 'संस्कृतम्', 'sa-IN'],
+  ['sat', 'ᱥᱟᱱᱛᱟᱲᱤ', 'sat-IN'], ['sd', 'سنڌي', 'sd-IN'], ['ta', 'தமிழ்', 'ta-IN'],
+  ['te', 'తెలుగు', 'te-IN'], ['ur', 'اردو', 'ur-IN']
+];
 
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.brand > span:last-child').forEach((brandText) => { brandText.innerHTML = 'I.G.R.I.S. <small>for INGRES</small>'; });
   document.querySelectorAll('.brand-mark').forEach((brandMark) => { brandMark.textContent = 'I'; });
   initMenu();
   initChatNavigation();
+  appState.authReady = initAuth();
   initLocationSuggestions();
   initHome();
   initArea();
@@ -19,12 +39,154 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initChatNavigation() {
   document.querySelectorAll('.site-nav').forEach((nav) => {
-    if (nav.querySelector('[href="/ask-igris.html"]')) return;
-    const link = document.createElement('a');
-    link.href = '/ask-igris.html';
-    link.textContent = 'Ask I.G.R.I.S.';
-    nav.append(link);
+    if (!nav.querySelector('[href="/about.html"]')) {
+      const aboutLink = document.createElement('a');
+      aboutLink.href = '/about.html';
+      aboutLink.textContent = 'About';
+      if (document.body.dataset.page === 'about') aboutLink.classList.add('active');
+      nav.append(aboutLink);
+    }
+    if (!nav.querySelector('[href="/ask-igris.html"]')) {
+      const chatLink = document.createElement('a');
+      chatLink.href = '/ask-igris.html';
+      chatLink.textContent = 'Ask I.G.R.I.S.';
+      nav.append(chatLink);
+    }
   });
+}
+
+async function initAuth() {
+  buildAuthUI();
+  try {
+    const [configResponse, meResponse] = await Promise.all([
+      fetch('/api/auth/config'),
+      fetch('/api/auth/me')
+    ]);
+    appState.authConfig = configResponse.ok ? await configResponse.json() : { google_enabled: false };
+    if (meResponse.ok) appState.user = (await meResponse.json()).user;
+  } catch (error) {
+    appState.authConfig = { google_enabled: false };
+  }
+  updateAuthUI();
+  return appState.user;
+}
+
+function buildAuthUI() {
+  document.querySelectorAll('.site-header').forEach((header) => {
+    if (header.querySelector('.account-button')) return;
+    const button = document.createElement('button');
+    button.className = 'account-button';
+    button.type = 'button';
+    button.textContent = 'Sign in';
+    button.addEventListener('click', () => appState.user ? toggleAccountMenu(button) : openAuthDialog());
+    header.append(button);
+  });
+  if ($('#auth-dialog')) return;
+  document.body.insertAdjacentHTML('beforeend', `
+    <dialog class="auth-dialog" id="auth-dialog">
+      <button class="auth-close" id="auth-close" type="button" aria-label="Close sign-in dialog">×</button>
+      <p class="eyebrow">YOUR I.G.R.I.S. ACCOUNT</p>
+      <h2>Save your groundwater conversations</h2>
+      <p>Pages and official evidence stay public. Sign in only when you want I.G.R.I.S. to generate and privately save an answer.</p>
+      <div class="google-signin-slot" id="google-signin-slot"><span>Loading Google sign-in…</span></div>
+      <p class="auth-note" id="auth-note">I.G.R.I.S. stores your name, verified email, profile image and chat history. Your Google password is never shared with us.</p>
+    </dialog>`);
+  $('#auth-close').addEventListener('click', () => $('#auth-dialog').close());
+  $('#auth-dialog').addEventListener('click', (event) => { if (event.target === $('#auth-dialog')) $('#auth-dialog').close(); });
+}
+
+function updateAuthUI() {
+  document.querySelectorAll('.account-button').forEach((button) => {
+    button.classList.toggle('is-signed-in', Boolean(appState.user));
+    if (appState.user) {
+      button.innerHTML = `${appState.user.picture ? `<img src="${escapeHTML(appState.user.picture)}" alt="">` : '<span>I</span>'}<strong>${escapeHTML(appState.user.name.split(' ')[0])}</strong>`;
+    } else {
+      button.textContent = 'Sign in';
+    }
+  });
+  setChatAuthState();
+}
+
+function toggleAccountMenu(button) {
+  document.querySelector('.account-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'account-menu';
+  menu.innerHTML = `<strong>${escapeHTML(appState.user.name)}</strong><span>${escapeHTML(appState.user.email)}</span>${$('#chat-history') ? '<button type="button" data-account-action="history">Saved chats</button>' : ''}<button type="button" data-account-action="signout">Sign out</button>`;
+  button.parentElement.append(menu);
+  menu.querySelector('[data-account-action="history"]')?.addEventListener('click', () => { menu.remove(); openChatHistory(); });
+  menu.querySelector('[data-account-action="signout"]').addEventListener('click', signOut);
+  setTimeout(() => document.addEventListener('click', (event) => { if (!menu.contains(event.target) && event.target !== button) menu.remove(); }, { once: true }), 0);
+}
+
+async function openAuthDialog() {
+  await appState.authReady;
+  const dialog = $('#auth-dialog');
+  dialog.showModal();
+  const slot = $('#google-signin-slot');
+  if (!appState.authConfig?.google_enabled) {
+    slot.innerHTML = '<div class="auth-setup">Google sign-in needs a <code>GOOGLE_CLIENT_ID</code> in the server environment.</div>';
+    return;
+  }
+  try {
+    await loadGoogleIdentityScript();
+    slot.innerHTML = '';
+    window.google.accounts.id.initialize({
+      client_id: appState.authConfig.google_client_id,
+      callback: handleGoogleCredential,
+      auto_select: false,
+      cancel_on_tap_outside: true
+    });
+    window.google.accounts.id.renderButton(slot, { theme: 'outline', size: 'large', width: 320, text: 'continue_with', shape: 'rectangular' });
+  } catch (error) {
+    slot.innerHTML = '<div class="auth-setup">Google sign-in could not load. Check your connection and browser privacy settings.</div>';
+  }
+}
+
+function loadGoogleIdentityScript() {
+  if (window.google?.accounts?.id) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-google-identity]');
+    if (existing) { existing.addEventListener('load', resolve, { once: true }); existing.addEventListener('error', reject, { once: true }); return; }
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.dataset.googleIdentity = 'true';
+    script.addEventListener('load', resolve, { once: true });
+    script.addEventListener('error', reject, { once: true });
+    document.head.append(script);
+  });
+}
+
+async function handleGoogleCredential(response) {
+  const slot = $('#google-signin-slot');
+  slot.classList.add('is-loading');
+  try {
+    const authResponse = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: response.credential })
+    });
+    const data = await authResponse.json();
+    if (!authResponse.ok) throw new Error(data.detail || 'Google sign-in could not be verified.');
+    appState.user = data.user;
+    $('#auth-dialog').close();
+    updateAuthUI();
+    await loadChatHistory();
+  } catch (error) {
+    $('#auth-note').textContent = error.message;
+  } finally {
+    slot.classList.remove('is-loading');
+  }
+}
+
+async function signOut() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  appState.user = null;
+  appState.chatHistory = [];
+  appState.conversationId = null;
+  document.querySelector('.account-menu')?.remove();
+  updateAuthUI();
 }
 
 function initMenu() {
@@ -319,13 +481,23 @@ function initChat() {
   const submit = form.querySelector('button[type="submit"]');
   const messages = $('#chat-messages');
   const refreshLocation = $('#chat-location-refresh');
+  const languageSelect = $('#chat-language');
+  languageSelect.innerHTML = CHAT_LANGUAGES.map(([code, label]) => `<option value="${code}">${label}</option>`).join('');
+  languageSelect.value = localStorage.getItem('igris-language') || 'en';
+  languageSelect.addEventListener('change', () => { localStorage.setItem('igris-language', languageSelect.value); setChatAuthState(); });
   initAtlasTabs();
   initVoiceInput(input);
   initFactsheetDialog();
   resolveChatLocation();
+  appState.authReady.then(() => { setChatAuthState(); if (appState.user) loadChatHistory(); });
   refreshLocation.addEventListener('click', resolveChatLocation);
   $('#print-evidence').addEventListener('click', () => window.print());
+  $('#chat-auth-open').addEventListener('click', openAuthDialog);
+  $('#chat-history-open').addEventListener('click', openChatHistory);
+  $('#chat-history-close').addEventListener('click', () => $('#chat-history').close());
   const ask = async (question) => {
+    await appState.authReady;
+    if (!appState.user) { openAuthDialog(); return; }
     const message = String(question || input.value).trim();
     if (!message) return;
     appendChatMessage(messages, 'user', message);
@@ -338,31 +510,37 @@ function initChat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message,
-          history: appState.chatHistory.slice(-6),
+          conversation_id: appState.conversationId,
+          history: appState.chatHistory.slice(-12),
           language: $('#chat-language').value,
           current_location: appState.chatLocation
         })
       });
       const data = await response.json();
+      if (response.status === 401) { appState.user = null; updateAuthUI(); throw new Error('Your session ended. Sign in again to continue.'); }
       if (!response.ok) throw new Error(data.detail || 'I.G.R.I.S. could not answer that question right now.');
       thinking.remove();
       const reply = data.reply || 'I could not form an answer from the available data.';
+      appState.conversationId = data.conversation_id;
       appendChatMessage(messages, 'assistant', reply);
       appState.chatHistory.push({ role: 'user', content: message }, { role: 'assistant', content: reply });
       renderVisualizationCanvas(data.visualization, data.source);
+      loadChatHistory();
     } catch (error) {
       thinking.remove();
       appendChatMessage(messages, 'assistant', error.message || 'The chat service is unavailable. Please try again.');
     } finally {
-      submit.disabled = false;
-      input.focus();
+      setChatAuthState();
+      if (appState.user) input.focus();
     }
   };
   form.addEventListener('submit', (event) => { event.preventDefault(); ask(); });
   input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); ask(); } });
   document.querySelectorAll('[data-question]').forEach((button) => button.addEventListener('click', () => ask(button.dataset.question)));
   $('#chat-clear').addEventListener('click', () => {
+    if (!appState.user) { openAuthDialog(); return; }
     appState.chatHistory = [];
+    appState.conversationId = null;
     messages.innerHTML = '<article class="chat-message assistant-message"><span class="message-avatar">I</span><div><p class="message-label">I.G.R.I.S.</p><p>New conversation started. What groundwater decision can I help with?</p></div></article>';
     $('#visualization-canvas').innerHTML = '<div class="canvas-empty"><div class="empty-orbit"><span></span><i></i><b></b></div><h3>Your visual answer appears here</h3><p>Ask about a state, district or location to explore extraction, recharge, water quality and weather together.</p></div>';
     $('#canvas-count').textContent = '128 visual recipes';
@@ -371,16 +549,149 @@ function initChat() {
   });
 }
 
+function setChatAuthState() {
+  const form = $('#chat-form');
+  if (!form) return;
+  const signedIn = Boolean(appState.user);
+  const gate = $('#chat-auth-gate');
+  const input = $('#chat-input');
+  const voice = $('#chat-voice');
+  const submit = form.querySelector('button[type="submit"]');
+  gate.hidden = signedIn;
+  input.disabled = !signedIn;
+  voice.disabled = !signedIn || voice.dataset.unsupported === 'true';
+  submit.disabled = !signedIn;
+  document.querySelectorAll('[data-question]').forEach((button) => { button.disabled = !signedIn; });
+  if (signedIn) {
+    input.placeholder = `Ask in ${CHAT_LANGUAGES.find(([code]) => code === $('#chat-language').value)?.[1] || 'your language'}…`;
+  } else {
+    input.placeholder = 'Sign in to ask and save a groundwater question';
+  }
+}
+
+async function loadChatHistory() {
+  if (!appState.user || !$('#chat-history-list')) return;
+  try {
+    const response = await fetch('/api/conversations');
+    if (!response.ok) return;
+    const data = await response.json();
+    const list = $('#chat-history-list');
+    list.innerHTML = (data.conversations || []).length ? data.conversations.map((conversation) => `
+      <article class="history-item${conversation.id === appState.conversationId ? ' active' : ''}">
+        <button type="button" data-conversation-id="${escapeHTML(conversation.id)}"><strong>${escapeHTML(conversation.title)}</strong><span>${conversation.message_count} messages · ${formatHistoryDate(conversation.updated_at)}</span></button>
+        <button class="history-delete" type="button" data-delete-conversation="${escapeHTML(conversation.id)}" aria-label="Delete ${escapeHTML(conversation.title)}">×</button>
+      </article>`).join('') : '<div class="history-empty"><strong>No saved conversations yet</strong><span>Your first generated answer will appear here.</span></div>';
+    list.querySelectorAll('[data-conversation-id]').forEach((button) => button.addEventListener('click', () => restoreConversation(button.dataset.conversationId)));
+    list.querySelectorAll('[data-delete-conversation]').forEach((button) => button.addEventListener('click', () => removeConversation(button.dataset.deleteConversation)));
+  } catch (error) {
+    $('#chat-history-list').innerHTML = '<div class="history-empty">Saved chats are temporarily unavailable.</div>';
+  }
+}
+
+async function openChatHistory() {
+  await appState.authReady;
+  if (!appState.user) { openAuthDialog(); return; }
+  await loadChatHistory();
+  $('#chat-history').showModal();
+}
+
+async function restoreConversation(conversationId) {
+  const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`);
+  const data = await response.json();
+  if (!response.ok) return;
+  const conversation = data.conversation;
+  appState.conversationId = conversation.id;
+  appState.chatHistory = conversation.messages.map((message) => ({ role: message.role, content: message.content }));
+  const messages = $('#chat-messages');
+  messages.innerHTML = '';
+  conversation.messages.forEach((message) => appendChatMessage(messages, message.role, message.content));
+  const lastVisualMessage = [...conversation.messages].reverse().find((message) => message.visualization);
+  if (lastVisualMessage) renderVisualizationCanvas(lastVisualMessage.visualization, lastVisualMessage.source);
+  $('#chat-history').close();
+  loadChatHistory();
+}
+
+async function removeConversation(conversationId) {
+  const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' });
+  if (!response.ok) return;
+  if (appState.conversationId === conversationId) {
+    appState.conversationId = null;
+    appState.chatHistory = [];
+    $('#chat-clear').click();
+  }
+  loadChatHistory();
+}
+
+function formatHistoryDate(timestamp) {
+  return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(Number(timestamp) * 1000));
+}
+
 function initVoiceInput(input) {
   const button = $('#chat-voice');
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) { button.hidden = true; return; }
+  const status = $('#voice-status');
+  if (!SpeechRecognition) {
+    button.dataset.unsupported = 'true';
+    button.disabled = true;
+    button.title = 'Voice input is not available in this browser. Chrome or Edge on HTTPS/localhost is recommended.';
+    status.textContent = 'Voice input is not supported by this browser.';
+    return;
+  }
   const recognition = new SpeechRecognition();
-  recognition.interimResults = false;
-  recognition.addEventListener('start', () => { button.textContent = 'Listening…'; button.classList.add('is-listening'); });
-  recognition.addEventListener('end', () => { button.textContent = 'Speak'; button.classList.remove('is-listening'); });
-  recognition.addEventListener('result', (event) => { input.value = event.results[0][0].transcript; input.focus(); });
-  button.addEventListener('click', () => { recognition.lang = $('#chat-language').value === 'hi' ? 'hi-IN' : 'en-IN'; recognition.start(); });
+  recognition.interimResults = true;
+  recognition.continuous = false;
+  recognition.maxAlternatives = 1;
+  let listening = false;
+  let finalTranscript = '';
+  recognition.addEventListener('start', () => {
+    listening = true;
+    finalTranscript = '';
+    button.textContent = 'Stop';
+    button.classList.add('is-listening');
+    status.textContent = 'Listening… speak naturally, then pause.';
+  });
+  recognition.addEventListener('end', () => {
+    listening = false;
+    button.textContent = 'Speak';
+    button.classList.remove('is-listening');
+    if (finalTranscript) status.textContent = 'Voice captured. Review the question, then send.';
+  });
+  recognition.addEventListener('result', (event) => {
+    let interimTranscript = '';
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const transcript = event.results[index][0].transcript;
+      if (event.results[index].isFinal) finalTranscript += transcript;
+      else interimTranscript += transcript;
+    }
+    input.value = `${finalTranscript}${interimTranscript}`.trim();
+    input.focus();
+  });
+  recognition.addEventListener('error', (event) => {
+    const messages = {
+      'not-allowed': 'Microphone access is blocked. Allow it in browser site settings and try again.',
+      'service-not-allowed': 'Your browser blocked its speech service. Try Chrome or Edge on localhost/HTTPS.',
+      'no-speech': 'No speech was detected. Move closer to the microphone and try again.',
+      'audio-capture': 'No working microphone was found.',
+      network: 'Speech recognition needs a network connection in this browser.'
+    };
+    status.textContent = messages[event.error] || 'Voice input stopped. Try again or type your question.';
+  });
+  button.addEventListener('click', async () => {
+    if (listening) { recognition.stop(); return; }
+    if (!appState.user) { openAuthDialog(); return; }
+    const selectedLanguage = CHAT_LANGUAGES.find(([code]) => code === $('#chat-language').value) || CHAT_LANGUAGES[0];
+    recognition.lang = selectedLanguage[2];
+    status.textContent = `Preparing ${selectedLanguage[1]} voice input…`;
+    try {
+      if (navigator.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      }
+      recognition.start();
+    } catch (error) {
+      status.textContent = error.name === 'NotAllowedError' ? 'Microphone access is blocked. Allow it in browser site settings.' : 'The microphone could not start. Check browser permissions and try again.';
+    }
+  });
 }
 
 function initFactsheetDialog() {
