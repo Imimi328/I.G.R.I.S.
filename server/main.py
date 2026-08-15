@@ -14,6 +14,7 @@ from pydantic import BaseModel
 import db_service
 import rag_service
 import llm_service
+import weather_service
 
 app = FastAPI(
     title="I.G.R.I.S. API Engine",
@@ -46,6 +47,10 @@ class CropRequest(BaseModel):
     block_name: Optional[str] = ""
     current_crop: Optional[str] = "Paddy"
 
+class AssessmentRequest(BaseModel):
+    location: str
+    audience: Optional[str] = "farmer"
+
 # ----------------- INTENT & ENTITY EXTRACTION -----------------
 
 ALL_STATES = [
@@ -69,6 +74,99 @@ def extract_state_from_text(text: str) -> Optional[str]:
     if "ap" in re.findall(r'\b\w+\b', text_lower): return "Andhra Pradesh"
     if "tn" in re.findall(r'\b\w+\b', text_lower): return "Tamil Nadu"
     return None
+
+def build_groundwater_assessment(block: Dict[str, Any], state_data: Optional[Dict[str, Any]], audience: str) -> Dict[str, Any]:
+    """Convert a classified assessment unit into an auditable, plain-language decision brief."""
+    category = block.get("category", "Safe")
+    audience = audience if audience in {"farmer", "resident", "business", "officer"} else "farmer"
+
+    category_details = {
+        "Safe": {
+            "verdict": "Proceed with safeguards",
+            "severity": "low",
+            "summary": "This assessment unit is classified as Safe in GWRA-2025. Keep extraction efficient so the aquifer remains within sustainable limits.",
+            "actions": [
+                "Measure pumping hours and fix leaks before adding capacity.",
+                "Capture rooftop runoff to replenish the local aquifer.",
+                "Test drinking water before consumption; quantity status does not certify quality."
+            ]
+        },
+        "Semi-Critical": {
+            "verdict": "Proceed cautiously",
+            "severity": "medium",
+            "summary": "This assessment unit is Semi-Critical. Groundwater demand is approaching the sustainable limit and any expansion should reduce demand and add recharge first.",
+            "actions": [
+                "Prefer drip or sprinkler irrigation over flood irrigation.",
+                "Add recharge pits or trenches before increasing pumping capacity.",
+                "Check seasonal water levels and local permissions before investing in a new borewell."
+            ]
+        },
+        "Critical": {
+            "verdict": "Protect first, expand later",
+            "severity": "high",
+            "summary": "This assessment unit is Critical. Extraction is near the sustainable limit, so new groundwater dependence carries material risk.",
+            "actions": [
+                "Avoid increasing extraction until a recharge and demand-reduction plan is in place.",
+                "Use alternative sources, treated reuse, or stored rainwater where feasible.",
+                "Confirm all borewell and abstraction requirements with the competent authority."
+            ]
+        },
+        "Over-Exploited": {
+            "verdict": "Do not expand extraction",
+            "severity": "critical",
+            "summary": "This assessment unit is Over-Exploited: groundwater use exceeds the replenishable resource. Prioritise conservation, recharge, and alternative sources over a new borewell.",
+            "actions": [
+                "Do not plan new non-essential extraction without checking the applicable CGWA and local requirements.",
+                "Shift irrigation to low-water crops and micro-irrigation; avoid flood irrigation.",
+                "Build recharge structures and monitor recovery before considering any additional demand."
+            ]
+        }
+    }
+
+    audience_additions = {
+        "farmer": "Match irrigation to soil moisture and rainfall; a larger pump does not create more sustainable water.",
+        "resident": "Use a certified laboratory test for drinking water and keep roof runoff separate from potable storage unless treated.",
+        "business": "Prepare a water balance showing reduction, reuse, recharge, and source alternatives before seeking approvals.",
+        "officer": "Prioritise demand management and recharge works in the most stressed units; track outcomes before the next assessment cycle."
+    }
+
+    quality = (state_data or {}).get("water_quality", [])
+    quality_alerts = [
+        {
+            "parameter": item.get("parameter"),
+            "above_limit_pct": item.get("pct_above_limit"),
+            "limit": item.get("permissible_limit")
+        }
+        for item in quality
+        if (item.get("pct_above_limit") or 0) > 0
+    ][:3]
+
+    details = category_details[category]
+    return {
+        "location": {
+            "block": block.get("block_name"),
+            "district": block.get("district_name"),
+            "state": block.get("state_name")
+        },
+        "classification": category,
+        "verdict": details["verdict"],
+        "severity": details["severity"],
+        "summary": details["summary"],
+        "actions": details["actions"] + [audience_additions[audience]],
+        "audience": audience,
+        "state_metrics": {
+            "stage_of_extraction_pct": (state_data or {}).get("stage_of_extraction_pct"),
+            "annual_recharge_bcm": (state_data or {}).get("total_annual_recharge"),
+            "annual_extraction_bcm": (state_data or {}).get("total_annual_extraction")
+        },
+        "quality_alerts": quality_alerts,
+        "depth_trends": (state_data or {}).get("depth_trends", [])[:2],
+        "evidence": {
+            "assessment": "CGWB Ground Water Resource Assessment 2025 (GEC-2015)",
+            "quality_note": "Water-quality signals are state-level indicators and must not be treated as an exact well-level test.",
+            "decision_note": "This is a screening brief, not a statutory clearance or a substitute for a local hydrogeological survey."
+        }
+    }
 
 # ----------------- API ENDPOINTS -----------------
 
@@ -107,6 +205,23 @@ def get_blocks(
 ):
     return db_service.search_blocks(query=query, state=state, category=category, limit=limit)
 
+@app.post("/api/assessment")
+def get_groundwater_assessment(req: AssessmentRequest):
+    location = req.location.strip()
+    if len(location) < 2:
+        return {"error": "Enter a block, district, or city name to create a decision brief."}
+
+    state_hint = extract_state_from_text(location) or ""
+    block = db_service.find_block_exact_or_fuzzy(location, state_hint=state_hint)
+    if not block:
+        matches = db_service.search_blocks(query=location, state=state_hint, limit=1)
+        block = matches[0] if matches else None
+    if not block:
+        return {"error": "No assessment unit matched that location. Try the block name, district, and state together."}
+
+    state_data = db_service.get_state_detail(block["state_name"])
+    return build_groundwater_assessment(block, state_data, req.audience)
+
 @app.post("/api/chat")
 def process_chat(req: ChatRequest):
     user_msg = req.message.strip()
@@ -115,6 +230,28 @@ def process_chat(req: ChatRequest):
     context_payload = {}
     visualization_payload = None
     
+    # 0. Advanced Geolocation & Weather Intent
+    # Attempt to resolve any location mentioned in the user message via OpenStreetMap
+    geo_results = weather_service.get_location_from_nominatim(user_msg)
+    best_geo = None
+    if geo_results and len(geo_results) > 0:
+        best_geo = geo_results[0]
+        context_payload["geocoded_location"] = {
+            "display_name": best_geo["display_name"],
+            "coordinates": {"lat": best_geo["lat"], "lng": best_geo["lng"]}
+        }
+
+        # Fetch real-time weather, ET0, and agro-season for the coordinates
+        weather_data = weather_service.get_live_weather(best_geo["lat"], best_geo["lng"])
+        if weather_data:
+            context_payload["weather_data"] = weather_data
+
+        # Refine state hint using geocoding result if initial NLP failed
+        if best_geo.get("state") and not detected_state:
+            # Re-run extraction to map to our ALL_STATES format
+            detected_state = extract_state_from_text(best_geo["state"]) or best_geo["state"]
+
+
     # 1. State Level Intent
     if detected_state:
         state_data = db_service.get_state_detail(detected_state)
@@ -145,7 +282,12 @@ def process_chat(req: ChatRequest):
             }
 
     # 2. Block Level Search
-    found_block = db_service.find_block_exact_or_fuzzy(user_msg, state_hint=detected_state or "")
+    # Combine original user message and the district from geocoding to improve hit rate
+    search_query = user_msg
+    if best_geo and best_geo.get("district"):
+        search_query += f" {best_geo['district']}"
+
+    found_block = db_service.find_block_exact_or_fuzzy(search_query, state_hint=detected_state or "")
     if found_block:
         context_payload["block_data"] = found_block
         if not detected_state and found_block.get("state_name"):

@@ -32,6 +32,7 @@ agent/
 
 # Temp html dumps
 *.html
+!frontend/index.html
 
 # Internal Notice / Private Docs
 1st Notice-Participation in the SIH-2026.pdf

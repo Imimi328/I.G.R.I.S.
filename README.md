@@ -59,10 +59,20 @@ INGRES Government Data & Reports
 ---
 
 ## 🚀 Key Features
-1. **Plain-Language Water Inquiries**: Ask questions like *"Is it safe to dig a tube-well in Sangrur, Punjab?"* or *"Compare groundwater recharge in Gujarat and Maharashtra."*
-2. **Regulatory & NOC Guidance**: Advises industries on CGWA compliance and rainwater recharge mandates in over-exploited zones.
-3. **Visual Analytics**: Instant rendering of donut charts (Irrigation vs Domestic vs Industrial extraction) and Stage of Extraction gauges.
-4. **Offline-First & Fast**: Powered by an indexed, local SQLite database containing 100% of India's block records with optional live API sync.
+1. **Groundwater Decision Brief**: Search a block, district, or city and receive a clear local verdict, official classification, water-quality context, and four role-specific actions for a farmer, resident, business, or local officer.
+2. **Plain-Language Water Inquiries**: Ask questions like *"Is it safe to dig a tube-well in Sangrur, Punjab?"* or *"Compare groundwater recharge in Gujarat and Maharashtra."*
+3. **Recharge Planning**: Estimate rooftop rainwater capture, practical storage, and household-supply potential using state rainfall assumptions.
+4. **Evidence-First AI Follow-ups**: Deep-dive questions stay grounded in indexed CGWB/GWRA data, with a deterministic offline fallback when the local LLM is unavailable.
+
+---
+
+## 🎬 90-Second Judge Demo
+1. Search **Sangrur, Punjab** as a farmer. IGRIS returns **“Do not expand extraction”**, the official *Over-Exploited* classification, Punjab’s resource context, and immediate conservation actions.
+2. Switch to **Haveli, Pune, Maharashtra** as a resident. The verdict becomes **“Proceed with safeguards”**, illustrating that the product is location-specific rather than alarmist.
+3. Use **Plan recharge** to turn a 1,000 sq ft rooftop into a tangible annual water-capture and storage estimate.
+4. Ask the follow-up chat: *“Can I drill a borewell in Sangrur?”* to demonstrate the grounded conversational layer.
+
+The decision brief is an evidence-based screening tool, never a substitute for statutory clearance, a well-level water test, or a local hydrogeological survey.
 
 ---
 
@@ -89,4 +99,3 @@ INGRES Government Data & Reports
 - **Theme:** Smart Automation
 - **Category:** Software
 - **Repository:** [https://github.com/Imimi328/I.G.R.I.S.](https://github.com/Imimi328/I.G.R.I.S.)
-

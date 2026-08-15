@@ -56,6 +56,18 @@ def generate_llm_response(
             evidence_text += f"- National Stage of Extraction: {n.get('national_soe_pct')}%\n"
             evidence_text += f"- Total Assessment Units: {n.get('total_blocks')} Blocks (Safe: {n.get('safe_blocks')}, Semi-Critical: {n.get('semi_critical_blocks')}, Critical: {n.get('critical_blocks')}, Over-Exploited: {n.get('over_exploited_blocks')})\n"
 
+        if "weather_data" in context_data:
+            w = context_data["weather_data"]
+            sc = w.get("season_context", {})
+            si = w.get("smart_irrigation", {})
+            evidence_text += "\n[LIVE AGRO-METEOROLOGICAL & SEASONAL WEATHER CONTEXT]:\n"
+            evidence_text += f"- Current Calendar Season: {sc.get('season_name')} ({sc.get('current_month')}) - {sc.get('phase')}\n"
+            evidence_text += f"- Live Weather: {w.get('temperature_c')}°C, Humidity: {w.get('humidity_pct')}%, Sky: {w.get('condition')}\n"
+            evidence_text += f"- 7-Day Rainfall Forecast: {w.get('rain_next_7_days_mm')} mm\n"
+            evidence_text += f"- Reference Evapotranspiration (ET0): {w.get('avg_evapotranspiration_mm_day')} mm/day\n"
+            evidence_text += f"- Smart Irrigation Advisory: {si.get('advice')}\n"
+            evidence_text += f"- Recommended Seasonal Low-Water Crops: {', '.join(sc.get('primary_crops', []))}\n"
+
         if "knowledge_snippets" in context_data:
             evidence_text += "\n[QUALITATIVE FACTSHEET CITATIONS]:\n"
             for snip in context_data["knowledge_snippets"]:
@@ -70,12 +82,13 @@ MANDATORY LANGUAGE RULES:
 - If the language is Hindi: Use standard Hindi in Devanagari script.
 
 CONTENT & TONE RULES:
-- Ground your answer in the official CGWB verified data provided below.
-- Give direct, authoritative, and actionable hydrological insights with clean bullet points and section headers.
+- Ground your answer in the official CGWB verified data and live agro-meteorological weather patterns provided below.
+- Give direct, authoritative, complete, and actionable hydrological insights with clean bullet points and section headers. Never stop mid-sentence.
+- If the user asks about farming/crops or irrigation, incorporate the current calendar season, live rainfall forecast, and smart irrigation guidance.
 - Explain the real-world impact (whether borewells are permissible, CGWA NOC requirements, water quality risks like Fluoride/Arsenic, and low-water crop suggestions).
 """
 
-    user_prompt = f"User Question: {user_message}\n{evidence_text}\n\nProvide an authoritative, detailed, and helpful response in {lang_name}:"
+    user_prompt = f"User Question: {user_message}\n{evidence_text}\n\nProvide an authoritative, complete, and detailed response in {lang_name}:"
 
     messages = [
         {"role": "system", "content": system_instruction},
@@ -91,7 +104,7 @@ CONTENT & TONE RULES:
         "model": DEFAULT_MODEL,
         "messages": messages,
         "temperature": 0.15,
-        "max_tokens": 1000
+        "max_tokens": 3000
     }
 
     try:

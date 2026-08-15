@@ -185,7 +185,8 @@ def find_block_exact_or_fuzzy(user_msg_or_block: str, state_hint: str = "") -> O
         'table', 'depth', 'feasibility', 'permit', 'permission', 'clearance', 'official', 'my', 
         'area', 'location', 'village', 'block', 'district', 'state', 'city', 'house', 'home', 
         'doing', 'do', 'extract', 'extraction', 'recharge', 'bcm', 'here', 'there', 'view', 
-        'check', 'show', 'give', 'me', 'find', 'get', 'data', 'report', 'like', 'think', 'idea'
+        'check', 'show', 'give', 'me', 'find', 'get', 'data', 'report', 'like', 'think', 'idea',
+        'want', 'live', 'sell', 'others', 'will', 'just', 'how', 'that'
     }
     candidates = [t for t in tokens if t.lower() not in STOP_WORDS]
     if not candidates:
@@ -233,27 +234,29 @@ def find_block_exact_or_fuzzy(user_msg_or_block: str, state_hint: str = "") -> O
                 d["category"] = format_category(d["category"])
                 return d
 
-        # 5. Fuzzy match STRICTLY within state_hint if given
+        # 5. Prefix match STRICTLY within state_hint if given
         if state_hint:
             for cand in candidates:
+                if len(cand) < 3: continue
                 cursor.execute(f"""
                     {select_sql}
                     WHERE (LOWER(block_name) LIKE ? OR LOWER(district) LIKE ?) AND LOWER(state) LIKE ?
                     LIMIT 1
-                """, (f"%{cand.lower()}%", f"%{cand.lower()}%", f"%{state_hint.lower()}%"))
+                """, (f"{cand.lower()}%", f"{cand.lower()}%", f"%{state_hint.lower()}%"))
                 r = cursor.fetchone()
                 if r:
                     d = dict(r)
                     d["category"] = format_category(d["category"])
                     return d
         else:
-            # Only if NO state_hint was given, do a broad fuzzy match
+            # Only if NO state_hint was given, do a broad prefix match
             for cand in candidates:
+                if len(cand) < 3: continue
                 cursor.execute(f"""
                     {select_sql}
                     WHERE LOWER(block_name) LIKE ? OR LOWER(district) LIKE ?
                     LIMIT 1
-                """, (f"%{cand.lower()}%", f"%{cand.lower()}%"))
+                """, (f"{cand.lower()}%", f"{cand.lower()}%"))
                 r = cursor.fetchone()
                 if r:
                     d = dict(r)
