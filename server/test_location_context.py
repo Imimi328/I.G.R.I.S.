@@ -1,10 +1,20 @@
 import unittest
 from unittest.mock import patch
 
-from server import main
+from server import main, weather_service
 
 
 class LocationContextTests(unittest.TestCase):
+    def test_precise_locality_is_preferred_over_city(self):
+        locality, locality_type = weather_service.get_precise_locality({
+            "city": "Pune",
+            "suburb": "Kalwad Wasti",
+            "state_district": "Pune",
+        })
+
+        self.assertEqual(locality, "Kalwad Wasti")
+        self.assertEqual(locality_type, "suburb")
+
     def test_gps_uses_reverse_geocoded_place_instead_of_default_centroid(self):
         reverse_location = {
             "display_name": "Connaught Place, New Delhi, Delhi, India",

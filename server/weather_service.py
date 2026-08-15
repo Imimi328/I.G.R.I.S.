@@ -200,6 +200,16 @@ def get_location_from_nominatim(query: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def get_precise_locality(address: Dict[str, Any]) -> tuple[str, str]:
+    for key in (
+        "neighbourhood", "residential", "quarter", "suburb", "village",
+        "hamlet", "town", "city", "municipality", "city_district",
+    ):
+        if address.get(key):
+            return str(address[key]), key
+    return "", ""
+
+
 def get_location_from_coordinates(lat: float, lng: float) -> Optional[Dict[str, Any]]:
     cache_key = f"{round(lat, 4)}_{round(lng, 4)}"
     cached = REVERSE_LOCATION_CACHE.get(cache_key)
@@ -213,7 +223,7 @@ def get_location_from_coordinates(lat: float, lng: float) -> Optional[Dict[str, 
 
     url = (
         "https://nominatim.openstreetmap.org/reverse"
-        f"?format=jsonv2&lat={lat}&lon={lng}&addressdetails=1&zoom=14"
+        f"?format=jsonv2&lat={lat}&lon={lng}&addressdetails=1&zoom=18&layer=address"
     )
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "IGRIS-SIH2026-Groundwater-Assistant/1.0"})
@@ -224,10 +234,7 @@ def get_location_from_coordinates(lat: float, lng: float) -> Optional[Dict[str, 
         country_code = str(address.get("country_code") or "").lower()
         if country_code and country_code != "in":
             return None
-        city = next(
-            (address.get(key) for key in ("village", "town", "city", "municipality", "suburb", "city_district") if address.get(key)),
-            "",
-        )
+        city, locality_type = get_precise_locality(address)
         district = next(
             (address.get(key) for key in ("state_district", "district", "county", "city_district", "city") if address.get(key)),
             "",
@@ -239,6 +246,7 @@ def get_location_from_coordinates(lat: float, lng: float) -> Optional[Dict[str, 
             "state": address.get("state", ""),
             "district": district,
             "city": city,
+            "locality_type": locality_type,
             "type": item.get("type", "location"),
         }
         if not result["state"]:
