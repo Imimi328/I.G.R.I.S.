@@ -1,4 +1,4 @@
-# Python
+# Python & Environment
 __pycache__/
 *.py[cod]
 *$py.class
@@ -7,8 +7,7 @@ __pycache__/
 env/
 venv/
 ENV/
-.env
-.env.local
+.env*
 .venv
 
 # Node / Frontend
@@ -30,5 +29,17 @@ Thumbs.db
 *.tmp
 *.log
 
-# Large temporary scratch files
-data/raw/cgwb_2025_report_page.html
+# Raw Datasets & Bulky PDF Downloads (Reproducible via scripts)
+data/raw/
+*.html
+
+# Internal Notice / Private Docs
+1st Notice-Participation in the SIH-2026.pdf
+
+# Temporary Inspection / Probe Scripts
+data/inspect_*.py
+data/test_*.py
+data/probe_*.py
+data/parse_opencity.py
+data/parse_blockwise_2025.py
+data/download_*.py
