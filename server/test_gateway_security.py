@@ -28,6 +28,19 @@ class GatewaySecurityTests(unittest.TestCase):
             shared_secret,
         ))
 
+    def test_only_authentication_bootstrap_and_health_are_public(self):
+        for path in gateway_security.PUBLIC_API_PATHS:
+            self.assertFalse(gateway_security.api_authentication_required(path))
+        for path in (
+            "/api/stats/national",
+            "/api/local-context",
+            "/api/location/suggest",
+            "/api/suggestor/rwh",
+            "/api/factsheets/Punjab/pages/1.png",
+            "/api/chat",
+        ):
+            self.assertTrue(gateway_security.api_authentication_required(path))
+
 
 if __name__ == "__main__":
     unittest.main()

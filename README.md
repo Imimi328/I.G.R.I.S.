@@ -33,7 +33,7 @@ INGRES Government Data & Reports
    │
    └──> I.G.R.I.S. Conversational Engine
           ├── Context-aware location resolver (GPS, locality, city, district, state)
-          ├── DeepSeek V4 Flash with an admin kill switch and grounded fallback
+          ├── DeepSeek V4 Flash with a fail-closed admin kill switch
           ├── 128 visualization recipes across 12 evidence families
           ├── Live Open-Meteo weather and irrigation context
           └── Original CGWB fact-sheet evidence viewer
@@ -72,7 +72,7 @@ INGRES Government Data & Reports
 3. **Evidence canvas**: 128 selectable visualization recipes covering resource balance, extraction stress, quality, depth, trends, weather, comparisons, actions, and source evidence.
 4. **Original source sheets**: Inspect indexed CGWB state fact-sheet pages in a fit-to-page viewer or a zoomable full-screen evidence dialog.
 5. **Citizen workflows**: Dedicated pages for local status, farming decisions, water safety, and rooftop recharge planning.
-6. **Multilingual interaction**: English plus all 22 Scheduled Languages of India, language-matched voice input where supported, printable decision briefs, responsive navigation, and keyboard-friendly controls.
+6. **Multilingual interaction**: English plus all 22 Scheduled Languages of India, language-matched browser speech recognition where supported, printable decision briefs, responsive navigation, and keyboard-friendly controls.
 7. **Live local context**: Open-Meteo conditions and forecast data turn official annual assessments into practical “what should I do today?” guidance.
 8. **Graceful offline intelligence**: When the local language model is unavailable, grounded rules still produce useful answers without inventing official facts.
 9. **Private citizen accounts**: Google verifies identity, model generation requires sign-in, and account-owned conversations retain their evidence canvas for later review.
@@ -89,7 +89,7 @@ pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Open [http://localhost:8000](http://localhost:8000). Location search and weather require internet access. DeepSeek is optional; the evidence-grounded fallback remains available when it is unconfigured, disabled, over quota, or unavailable.
+Open [http://localhost:8000](http://localhost:8000). Location search and weather require internet access and a signed-in account. When the administrator disables DeepSeek, chat returns a paused status without generating an AI or deterministic fallback answer.
 
 ### Google sign-in
 
@@ -104,7 +104,7 @@ Open [http://localhost:8000](http://localhost:8000). Location search and weather
 
 The Google Identity button used here validates an ID token, so the OAuth client secret is never sent to or used by the browser. The screenshot error `no registered origin` is fixed in Google Cloud Console by adding the current origin to the list above; changing application code or the client secret cannot register that origin.
 
-Generated chat is protected by an HTTP-only, SameSite session cookie. Public pages, local searches, weather, official groundwater evidence, and source sheets remain accessible without an account. Private conversations are stored in the ignored runtime database at `data/runtime/igris_accounts.db`.
+Every functional API is protected by an HTTP-only, SameSite session cookie. Static explanatory pages remain viewable, but location searches, weather, official groundwater evidence, source sheets, calculators, voice transcription, and chat require a verified account. Private conversations are stored in the ignored runtime database at `data/runtime/igris_accounts.db`.
 
 ### Production topology
 

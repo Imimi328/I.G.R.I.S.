@@ -12,7 +12,14 @@ const escapeHTML = (value = '') => String(value).replace(/[&<>'"]/g, (character)
 const formatNumber = (value) => Number(value || 0).toLocaleString('en-IN');
 const API_BASE_URL = '';
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
-const apiFetch = (path, options = {}) => fetch(apiUrl(path), { ...options, credentials: 'include' });
+const apiFetch = async (path, options = {}) => {
+  const response = await fetch(apiUrl(path), { ...options, credentials: 'include' });
+  if (response.status === 401 && !path.startsWith('/api/auth/')) {
+    appState.user = null;
+    updateAuthUI();
+  }
+  return response;
+};
 const resolveApiAsset = (url) => String(url || '').startsWith('/api/') ? apiUrl(url) : url;
 
 const CHAT_LANGUAGES = [
@@ -100,7 +107,7 @@ function buildAuthUI() {
       <button class="auth-close" id="auth-close" type="button" aria-label="Close sign-in dialog">×</button>
       <p class="eyebrow">YOUR I.G.R.I.S. ACCOUNT</p>
       <h2>Save your groundwater conversations</h2>
-      <p>Pages and official evidence stay public. Sign in only when you want I.G.R.I.S. to generate and privately save an answer.</p>
+      <p>Sign in to use location search, live weather, farm planning, water-safety evidence, recharge estimates, and AI chat.</p>
       <div class="google-signin-slot" id="google-signin-slot"><span>Loading Google sign-in…</span></div>
       <p class="auth-note" id="auth-note">I.G.R.I.S. stores your name, verified email, profile image and chat history. Your Google password is never shared with us.</p>
     </dialog>
@@ -111,7 +118,7 @@ function buildAuthUI() {
       <p class="admin-summary" id="admin-summary">Loading protected server status…</p>
       <label class="admin-switch"><input id="admin-llm-enabled" type="checkbox"><span>Allow paid DeepSeek generation</span></label>
       <div class="admin-metrics" id="admin-metrics"></div>
-      <p class="auth-note">Turning this off is immediate and server-enforced. Citizens can still use the grounded fallback.</p>
+      <p class="auth-note">Turning this off is immediate and server-enforced. No AI or fallback answer is generated while disabled.</p>
     </dialog>`);
   $('#auth-close').addEventListener('click', () => $('#auth-dialog').close());
   $('#auth-dialog').addEventListener('click', (event) => { if (event.target === $('#auth-dialog')) $('#auth-dialog').close(); });
@@ -129,6 +136,44 @@ function updateAuthUI() {
     }
   });
   setChatAuthState();
+  updateFeatureAuthState();
+  document.dispatchEvent(new CustomEvent('igris:auth-changed', { detail: { signedIn: Boolean(appState.user) } }));
+}
+
+function updateFeatureAuthState() {
+  const protectedPages = new Set(['home', 'area', 'farm', 'safety', 'recharge']);
+  if (!protectedPages.has(document.body.dataset.page)) return;
+  const main = document.querySelector('main');
+  if (!main) return;
+  const signedIn = Boolean(appState.user);
+  let gate = $('#feature-auth-gate');
+  if (!signedIn && !gate) {
+    gate = document.createElement('section');
+    gate.id = 'feature-auth-gate';
+    gate.className = 'feature-auth-gate';
+    gate.innerHTML = '<div><p class="eyebrow">ACCOUNT REQUIRED</p><strong>Sign in to use live I.G.R.I.S. tools</strong><span>Your searches, weather context, groundwater evidence, and calculations are protected behind your account.</span></div><button type="button">Continue with Google</button>';
+    gate.querySelector('button').addEventListener('click', openAuthDialog);
+    main.prepend(gate);
+  } else if (signedIn && gate) {
+    gate.remove();
+  }
+  main.querySelectorAll('input, select, textarea, button').forEach((control) => {
+    if (control.closest('#feature-auth-gate')) return;
+    if (!signedIn && !control.disabled) {
+      control.dataset.authLocked = 'true';
+      control.disabled = true;
+    } else if (signedIn && control.dataset.authLocked === 'true') {
+      delete control.dataset.authLocked;
+      control.disabled = false;
+    }
+  });
+}
+
+async function requireSignedInAction() {
+  await appState.authReady;
+  if (appState.user) return true;
+  await openAuthDialog();
+  return false;
 }
 
 function toggleAccountMenu(button) {
@@ -276,6 +321,7 @@ function initLocationSuggestions() {
       const query = input.value.trim();
       if (query.length < 4) { list.innerHTML = ''; return; }
       debounceTimer = setTimeout(async () => {
+        if (!appState.user) return;
         try {
           const response = await apiFetch(`/api/location/suggest?query=${encodeURIComponent(query)}`);
           if (!response.ok) return;
@@ -299,13 +345,21 @@ function initLocationSuggestions() {
 function initHome() {
   const form = $('#home-location-form');
   if (!form) return;
-  loadBlockCount();
-  form.addEventListener('submit', (event) => {
+  let summaryLoaded = false;
+  const loadSignedInSummary = () => {
+    if (!appState.user || summaryLoaded) return;
+    summaryLoaded = true;
+    loadBlockCount();
+  };
+  appState.authReady.then(loadSignedInSummary);
+  document.addEventListener('igris:auth-changed', loadSignedInSummary);
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!await requireSignedInAction()) return;
     const place = $('#home-location').value.trim();
     if (place) window.location.href = `/my-area.html?place=${encodeURIComponent(place)}`;
   });
-  $('#home-gps').addEventListener('click', () => { window.location.href = '/my-area.html?gps=1'; });
+  $('#home-gps').addEventListener('click', async () => { if (await requireSignedInAction()) window.location.href = '/my-area.html?gps=1'; });
 }
 
 async function loadBlockCount() {
@@ -323,41 +377,53 @@ async function loadBlockCount() {
 function initArea() {
   const form = $('#context-search-form');
   if (!form) return;
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!await requireSignedInAction()) return;
     loadPageContext('area', { query: $('#context-search').value.trim() });
   });
-  $('#context-gps').addEventListener('click', () => loadPageContext('area', { gps: true }));
+  $('#context-gps').addEventListener('click', async () => { if (await requireSignedInAction()) loadPageContext('area', { gps: true }); });
   const parameters = new URLSearchParams(window.location.search);
-  if (parameters.get('place')) {
-    $('#context-search').value = parameters.get('place');
-    loadPageContext('area', { query: parameters.get('place') });
-  } else if (parameters.get('gps')) {
-    loadPageContext('area', { gps: true });
-  }
+  let initialContextLoaded = false;
+  const loadInitialContext = () => {
+    if (!appState.user || initialContextLoaded) return;
+    if (parameters.get('place')) {
+      initialContextLoaded = true;
+      $('#context-search').value = parameters.get('place');
+      loadPageContext('area', { query: parameters.get('place') });
+    } else if (parameters.get('gps')) {
+      initialContextLoaded = true;
+      loadPageContext('area', { gps: true });
+    }
+  };
+  appState.authReady.then(loadInitialContext);
+  document.addEventListener('igris:auth-changed', loadInitialContext);
 }
 
 function initFarm() {
   const form = $('#farm-search-form');
   if (!form) return;
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!await requireSignedInAction()) return;
     loadPageContext('farm', { query: $('#farm-search').value.trim() });
   });
-  $('#farm-gps').addEventListener('click', () => loadPageContext('farm', { gps: true }));
+  $('#farm-gps').addEventListener('click', async () => { if (await requireSignedInAction()) loadPageContext('farm', { gps: true }); });
 }
 
 function initSafety() {
   const form = $('#safety-search-form');
   if (!form) return;
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!await requireSignedInAction()) return;
     loadPageContext('safety', { query: $('#safety-search').value.trim() });
   });
-  $('#safety-gps').addEventListener('click', () => loadPageContext('safety', { gps: true }));
+  $('#safety-gps').addEventListener('click', async () => { if (await requireSignedInAction()) loadPageContext('safety', { gps: true }); });
 }
 
 async function loadPageContext(page, options) {
+  if (!await requireSignedInAction()) return;
   setLoading(page, true);
   try {
     const context = options.gps ? await fetchGpsContext() : await fetchSearchContext(options.query);
@@ -522,6 +588,7 @@ function initRecharge() {
   if (!form) return;
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!await requireSignedInAction()) return;
     const area = Number($('#recharge-area').value);
     const stateName = $('#recharge-state').value;
     const result = $('#recharge-result');
@@ -552,9 +619,16 @@ function initChat() {
   initAtlasTabs();
   initVoiceInput(input);
   initFactsheetDialog();
-  resolveChatLocation();
-  appState.authReady.then(() => { setChatAuthState(); if (appState.user) loadChatHistory(); });
-  refreshLocation.addEventListener('click', resolveChatLocation);
+  let locationResolved = false;
+  const initializeSignedInChat = () => {
+    setChatAuthState();
+    if (!appState.user) { locationResolved = false; return; }
+    loadChatHistory();
+    if (!locationResolved) { locationResolved = true; resolveChatLocation(); }
+  };
+  appState.authReady.then(initializeSignedInChat);
+  document.addEventListener('igris:auth-changed', initializeSignedInChat);
+  refreshLocation.addEventListener('click', async () => { if (await requireSignedInAction()) resolveChatLocation(); });
   $('#print-evidence').addEventListener('click', () => window.print());
   $('#chat-auth-open').addEventListener('click', openAuthDialog);
   $('#chat-history-open').addEventListener('click', openChatHistory);
@@ -697,8 +771,8 @@ function initVoiceInput(input) {
   if (!SpeechRecognition) {
     button.dataset.unsupported = 'true';
     button.disabled = true;
-    button.title = 'Voice input is not available in this browser. Chrome or Edge on HTTPS/localhost is recommended.';
-    status.textContent = 'Voice input is not supported by this browser.';
+    button.title = 'Voice input requires a browser with Web Speech support, such as Chrome or Edge.';
+    status.textContent = 'This browser does not provide Web Speech recognition. Use current Chrome or Edge for voice input.';
     return;
   }
   const recognition = new SpeechRecognition();
@@ -733,13 +807,20 @@ function initVoiceInput(input) {
   recognition.addEventListener('error', (event) => {
     const messages = {
       'not-allowed': 'Microphone access is blocked. Allow it in browser site settings and try again.',
-      'service-not-allowed': 'Your browser blocked its speech service. Try Chrome or Edge on localhost/HTTPS.',
+      'service-not-allowed': 'Your browser blocks Web Speech. Use current Chrome or Edge for voice input.',
       'no-speech': 'No speech was detected. Move closer to the microphone and try again.',
       'audio-capture': 'No working microphone was found.',
       network: 'Speech recognition needs a network connection in this browser.'
     };
+    listening = false;
+    button.textContent = 'Speak';
+    button.classList.remove('is-listening');
     status.textContent = messages[event.error] || 'Voice input stopped. Try again or type your question.';
   });
+  recognition.addEventListener('nomatch', () => {
+    status.textContent = 'I could not recognize that speech. Check the selected language and try again.';
+  });
+
   button.addEventListener('click', async () => {
     if (listening) { recognition.stop(); return; }
     if (!appState.user) { openAuthDialog(); return; }
@@ -747,10 +828,6 @@ function initVoiceInput(input) {
     recognition.lang = selectedLanguage[2];
     status.textContent = `Preparing ${selectedLanguage[1]} voice input…`;
     try {
-      if (navigator.mediaDevices?.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((track) => track.stop());
-      }
       recognition.start();
     } catch (error) {
       status.textContent = error.name === 'NotAllowedError' ? 'Microphone access is blocked. Allow it in browser site settings.' : 'The microphone could not start. Check browser permissions and try again.';

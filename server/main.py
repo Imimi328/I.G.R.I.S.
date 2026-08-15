@@ -78,6 +78,20 @@ async def security_headers(request: Request, call_next):
                 "Referrer-Policy": "no-referrer",
             },
         )
+    if gateway_security.api_authentication_required(request.url.path):
+        session = request.cookies.get("igris_session")
+        if not auth_service.verify_session(session):
+            return Response(
+                content='{"detail":"Sign in with Google to use I.G.R.I.S. tools."}',
+                status_code=401,
+                media_type="application/json",
+                headers={
+                    "Cache-Control": "no-store",
+                    "X-Content-Type-Options": "nosniff",
+                    "X-Frame-Options": "DENY",
+                    "Referrer-Policy": "no-referrer",
+                },
+            )
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -522,6 +536,8 @@ def process_chat(
     user_msg = req.message.strip()
     if not user_msg:
         raise HTTPException(status_code=400, detail="Enter a groundwater question.")
+    if not auth_service.get_llm_enabled():
+        raise HTTPException(status_code=503, detail="AI generation is currently paused by the administrator.")
     try:
         conversation = auth_service.ensure_conversation(user["sub"], req.conversation_id, user_msg)
     except PermissionError as error:
@@ -708,6 +724,10 @@ def process_chat(
 
     # 5. Reserve spend atomically, then call DeepSeek only when the owner has enabled it.
     llm_claim = auth_service.claim_llm_call(user["sub"], llm_service.DEFAULT_MODEL)
+    if not llm_claim["allowed"]:
+        status_code = 503 if llm_claim["reason"] == "disabled" else 429
+        detail = "AI generation is currently paused by the administrator." if status_code == 503 else "The AI generation limit has been reached. Try again later."
+        raise HTTPException(status_code=status_code, detail=detail)
     pseudonymous_user_id = hashlib.sha256(user["sub"].encode("utf-8")).hexdigest()[:32]
     llm_result = llm_service.generate_llm_response(
         user_message=user_msg,
@@ -743,6 +763,7 @@ def process_chat(
         "generation_mode": "deepseek" if llm_result.get("model_used") else "grounded_fallback",
         "llm_availability": llm_claim.get("reason"),
     }
+
 
 # ----------------- SMART SUGGESTOR ENDPOINTS -----------------
 
