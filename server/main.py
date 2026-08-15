@@ -134,8 +134,9 @@ def sign_in_with_google(req: GoogleCredentialRequest, response: Response):
 
 
 @app.get("/api/auth/me")
-def get_current_user(user: Dict[str, Any] = Depends(require_user)):
-    return {"user": user}
+def get_current_user(igris_session: Optional[str] = Cookie(default=None)):
+    user = auth_service.verify_session(igris_session)
+    return {"user": auth_service.public_user(user) if user else None}
 
 
 @app.get("/api/admin/status")
